@@ -4,9 +4,7 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Depends
 from ...models.v1.worker import (
     WorkerResponse,
-    WorkerDetailResponse,
-    CreateWorkerRequest,
-    WorkerStatus
+    CreateWorkerRequest
 )
 from ...models.v1.conversation import (
     ConversationResponse,
@@ -52,9 +50,7 @@ async def list_workers(manager: WorkerManager = Depends(get_worker_manager)):
             type=worker.type,
             env_vars=worker.env_vars,
             command_params=worker.command_params,
-            status=worker.status,
-            created_at=worker.created_at,
-            last_activity=worker.last_activity
+            created_at=worker.created_at
         )
         for worker in workers
     ]
@@ -87,9 +83,7 @@ async def create_worker(
             type=worker.type,
             env_vars=worker.env_vars,
             command_params=worker.command_params,
-            status=worker.status,
-            created_at=worker.created_at,
-            last_activity=worker.last_activity
+            created_at=worker.created_at
         )
 
     except ValueError as e:
@@ -98,7 +92,7 @@ async def create_worker(
         raise HTTPException(status_code=500, detail=f"Failed to create worker: {str(e)}")
 
 
-@router.get("/workers/{worker_id}", response_model=WorkerDetailResponse)
+@router.get("/workers/{worker_id}", response_model=WorkerResponse)
 async def get_worker(
     worker_id: str,
     manager: WorkerManager = Depends(get_worker_manager)
@@ -110,7 +104,7 @@ async def get_worker(
         worker_id: Worker ID
 
     Returns:
-        Worker details including message history
+        Worker details
 
     Raises:
         HTTPException: If worker not found
@@ -120,18 +114,12 @@ async def get_worker(
     if not worker:
         raise HTTPException(status_code=404, detail=f"Worker not found: {worker_id}")
 
-    # Get recent messages
-    messages = manager.get_message_history(worker_id, limit=50)
-
-    return WorkerDetailResponse(
+    return WorkerResponse(
         id=worker.id,
         type=worker.type,
         env_vars=worker.env_vars,
         command_params=worker.command_params,
-        status=worker.status,
-        created_at=worker.created_at,
-        last_activity=worker.last_activity,
-        messages=messages
+        created_at=worker.created_at
     )
 
 

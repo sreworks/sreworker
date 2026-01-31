@@ -6,7 +6,7 @@ from typing import Dict, Optional, List, Any, Set
 from fastapi import WebSocket
 import uuid
 
-from ...models.v1.worker import WorkerModel, WorkerStatus, CreateWorkerRequest
+from ...models.v1.worker import WorkerModel, CreateWorkerRequest
 from ...workers.v1.registry import worker_registry
 from ...workers.v1.base import BaseWorker
 from ...utils.logger import get_app_logger
@@ -99,9 +99,7 @@ class WorkerManager:
                 id=worker_id,
                 type=request.type,
                 env_vars=request.env_vars or {},
-                command_params=request.command_params or [],
-                status=WorkerStatus.RUNNING,
-                last_activity=datetime.utcnow()
+                command_params=request.command_params or []
             )
 
             # 存储到内存
@@ -117,9 +115,7 @@ class WorkerManager:
                     'type': worker_model.type,
                     'env_vars': worker_model.env_vars,
                     'command_params': worker_model.command_params,
-                    'status': worker_model.status.value,
-                    'created_at': worker_model.created_at,
-                    'last_activity': worker_model.last_activity
+                    'created_at': worker_model.created_at
                 }
                 self.db.create_worker(worker_data)
 
@@ -241,14 +237,6 @@ class WorkerManager:
 
         if success:
             timestamp = datetime.utcnow()
-
-            # Update last activity
-            if worker_id in self.worker_models:
-                self.worker_models[worker_id].last_activity = timestamp
-
-                # Update in database
-                if self.db:
-                    self.db.update_worker_status(worker_id, WorkerStatus.RUNNING.value, timestamp)
 
             # Store message in history (memory)
             message_data = {

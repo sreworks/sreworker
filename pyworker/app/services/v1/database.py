@@ -42,17 +42,14 @@ class DatabaseManager:
     def _init_schema(self):
         """Initialize database schema"""
         try:
-            # Workers table
+            # Workers table - storage record for worker configuration
             self.conn.execute("""
                 CREATE TABLE IF NOT EXISTS workers (
                     id VARCHAR PRIMARY KEY,
                     type VARCHAR NOT NULL,
                     env_vars JSON,
                     command_params JSON,
-                    status VARCHAR NOT NULL,
                     created_at TIMESTAMP NOT NULL,
-                    last_activity TIMESTAMP,
-                    INDEX idx_workers_status (status),
                     INDEX idx_workers_type (type)
                 )
             """)
@@ -118,16 +115,14 @@ class DatabaseManager:
         """
         try:
             self.conn.execute("""
-                INSERT INTO workers (id, type, env_vars, command_params, status, created_at, last_activity)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO workers (id, type, env_vars, command_params, created_at)
+                VALUES (?, ?, ?, ?, ?)
             """, [
                 worker_data['id'],
                 worker_data['type'],
                 json.dumps(worker_data.get('env_vars', {})),
                 json.dumps(worker_data.get('command_params', [])),
-                worker_data['status'],
-                worker_data['created_at'],
-                worker_data.get('last_activity')
+                worker_data['created_at']
             ])
             self.logger.info(f"Created worker record: {worker_data['id']}")
             return True
@@ -147,7 +142,7 @@ class DatabaseManager:
         """
         try:
             result = self.conn.execute("""
-                SELECT id, type, env_vars, command_params, status, created_at, last_activity
+                SELECT id, type, env_vars, command_params, created_at
                 FROM workers
                 WHERE id = ?
             """, [worker_id]).fetchone()
@@ -158,9 +153,7 @@ class DatabaseManager:
                     'type': result[1],
                     'env_vars': json.loads(result[2]) if result[2] else {},
                     'command_params': json.loads(result[3]) if result[3] else [],
-                    'status': result[4],
-                    'created_at': result[5],
-                    'last_activity': result[6]
+                    'created_at': result[4]
                 }
             return None
         except Exception as e:
@@ -176,7 +169,7 @@ class DatabaseManager:
         """
         try:
             results = self.conn.execute("""
-                SELECT id, type, env_vars, command_params, status, created_at, last_activity
+                SELECT id, type, env_vars, command_params, created_at
                 FROM workers
                 ORDER BY created_at DESC
             """).fetchall()
@@ -188,40 +181,12 @@ class DatabaseManager:
                     'type': row[1],
                     'env_vars': json.loads(row[2]) if row[2] else {},
                     'command_params': json.loads(row[3]) if row[3] else [],
-                    'status': row[4],
-                    'created_at': row[5],
-                    'last_activity': row[6]
+                    'created_at': row[4]
                 })
             return workers
         except Exception as e:
             self.logger.error(f"Failed to list workers: {e}")
             return []
-
-    def update_worker_status(self, worker_id: str, status: str, last_activity: Optional[datetime] = None) -> bool:
-        """
-        Update worker status
-
-        Args:
-            worker_id: Worker ID
-            status: New status
-            last_activity: Last activity timestamp
-
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            if last_activity is None:
-                last_activity = datetime.utcnow()
-
-            self.conn.execute("""
-                UPDATE workers
-                SET status = ?, last_activity = ?
-                WHERE id = ?
-            """, [status, last_activity, worker_id])
-            return True
-        except Exception as e:
-            self.logger.error(f"Failed to update worker status: {e}")
-            return False
 
     def delete_worker(self, worker_id: str) -> bool:
         """
