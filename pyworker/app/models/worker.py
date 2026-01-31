@@ -1,66 +1,46 @@
-"""Worker data model."""
+"""Worker API models."""
 
+import re
 from datetime import datetime
-from enum import Enum
-from typing import Optional, Dict, Any, List
-from pydantic import BaseModel, Field
-import uuid
+from typing import Optional, Dict, List
+from pydantic import BaseModel, Field, field_validator
 
 
-class WorkerStatus(str, Enum):
-    """Worker status enum."""
-    CREATED = "created"
-    RUNNING = "running"
-    PAUSED = "paused"
-    STOPPED = "stopped"
-    ERROR = "error"
-
-
-class WorkerModel(BaseModel):
-    """Worker data model."""
-
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()), description="Worker unique ID")
-    name: str = Field(..., description="Worker name")
-    ai_cli_type: str = Field(default="claude", description="AI CLI type (claude, opencode, etc.)")
-    status: WorkerStatus = Field(default=WorkerStatus.CREATED, description="Worker status")
-    config: Dict[str, Any] = Field(default_factory=dict, description="Worker configuration")
-    created_at: datetime = Field(default_factory=datetime.utcnow, description="Creation timestamp")
-    last_activity: Optional[datetime] = Field(default=None, description="Last activity timestamp")
-
-    class Config:
-        """Pydantic configuration."""
-        json_encoders = {
-            datetime: lambda v: v.isoformat()
-        }
+# Worker name pattern: alphanumeric, hyphens, underscores, 1-64 chars
+WORKER_NAME_PATTERN = re.compile(r'^[a-zA-Z][a-zA-Z0-9_-]{0,63}$')
 
 
 class CreateWorkerRequest(BaseModel):
     """Request model for creating a worker."""
 
-    name: str = Field(..., description="Worker name", min_length=1, max_length=100)
-    ai_cli_type: Optional[str] = Field(default="claude", description="AI CLI type")
-    config: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Worker configuration")
+    name: str = Field(description="Worker name (used as ID)")
+    type: str = Field(default="claude", description="Worker type")
+    env_vars: Optional[Dict[str, str]] = Field(default_factory=dict, description="Environment variables")
+    command_params: Optional[List[str]] = Field(default_factory=list, description="Command line parameters")
+
+    @field_validator('name')
+    @classmethod
+    def validate_name(cls, v):
+        """Validate worker name format."""
+        if not WORKER_NAME_PATTERN.match(v):
+            raise ValueError(
+                f"Invalid name '{v}'. Must start with a letter, "
+                "contain only alphanumeric characters, hyphens, or underscores, "
+                "and be 1-64 characters long."
+            )
+        return v
 
 
 class WorkerResponse(BaseModel):
     """Response model for worker information."""
 
-    id: str
     name: str
-    ai_cli_type: str
-    status: WorkerStatus
+    type: str
+    env_vars: Dict[str, str]
+    command_params: List[str]
     created_at: datetime
-    last_activity: Optional[datetime]
 
     class Config:
-        """Pydantic configuration."""
         json_encoders = {
             datetime: lambda v: v.isoformat()
         }
-
-
-class WorkerDetailResponse(WorkerResponse):
-    """Detailed response model for worker information."""
-
-    config: Dict[str, Any]
-    messages: List[Dict[str, Any]] = Field(default_factory=list, description="Recent messages")

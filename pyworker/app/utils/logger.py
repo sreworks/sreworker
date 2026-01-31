@@ -88,7 +88,7 @@ def init_app_logger(settings) -> logging.Logger:
     global app_logger
 
     app_logger = setup_logger(
-        name="ai_code_worker",
+        name="pyworker2",
         log_level=settings.log_level,
         log_file=settings.log_file
     )
@@ -105,6 +105,6 @@ def get_app_logger() -> logging.Logger:
     """
     if app_logger is None:
         # Return a default logger if not initialized
-        return setup_logger("ai_code_worker")
+        return setup_logger("pyworker2")
 
     return app_logger

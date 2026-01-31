@@ -1,5 +1,6 @@
-"""API V1"""
+"""API v1 package."""
 
-from . import workers
+from .workers import router as workers_router
+from .conversations import router as conversations_router
 
-__all__ = ["workers"]
+__all__ = ["workers_router", "conversations_router"]
