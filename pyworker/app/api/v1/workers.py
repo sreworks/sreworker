@@ -20,7 +20,7 @@ from ...adapters.v1.registry import adapter_registry
 from ...workers import handlers, default as default_type
 from ...config import settings
 
-router = APIRouter(prefix="/api/v1", tags=["workers-v1"])
+router = APIRouter(prefix="/api/v1")
 
 # Global worker manager instance (will be set by main.py)
 worker_manager: WorkerManager = None
@@ -35,7 +35,7 @@ def get_worker_manager() -> WorkerManager:
 
 # === Worker Management Endpoints ===
 
-@router.get("/workers", response_model=dict)
+@router.get("/workers", response_model=dict, tags=["Workers"])
 async def list_workers(manager: WorkerManager = Depends(get_worker_manager)):
     """
     List all workers.
@@ -59,7 +59,7 @@ async def list_workers(manager: WorkerManager = Depends(get_worker_manager)):
     return {"workers": worker_responses}
 
 
-@router.post("/workers", response_model=WorkerResponse, status_code=201)
+@router.post("/workers", response_model=WorkerResponse, status_code=201, tags=["Workers"])
 async def create_worker(
     request: CreateWorkerRequest,
     manager: WorkerManager = Depends(get_worker_manager)
@@ -93,7 +93,7 @@ async def create_worker(
         raise HTTPException(status_code=500, detail=f"Failed to create worker: {str(e)}")
 
 
-@router.get("/workers/{worker_id}", response_model=WorkerResponse)
+@router.get("/workers/{worker_id}", response_model=WorkerResponse, tags=["Workers"])
 async def get_worker(
     worker_id: str,
     manager: WorkerManager = Depends(get_worker_manager)
@@ -124,7 +124,7 @@ async def get_worker(
     )
 
 
-@router.delete("/workers/{worker_id}", response_model=dict)
+@router.delete("/workers/{worker_id}", response_model=dict, tags=["Workers"])
 async def delete_worker(
     worker_id: str,
     manager: WorkerManager = Depends(get_worker_manager)
@@ -156,7 +156,7 @@ async def delete_worker(
 
 # === Conversation Management Endpoints ===
 
-@router.get("/workers/{worker_id}/conversations", response_model=ConversationListResponse)
+@router.get("/workers/{worker_id}/conversations", response_model=ConversationListResponse, tags=["Conversations"])
 async def list_conversations(
     worker_id: str,
     manager: WorkerManager = Depends(get_worker_manager)
@@ -192,7 +192,7 @@ async def list_conversations(
         raise HTTPException(status_code=500, detail=f"Failed to list conversations: {str(e)}")
 
 
-@router.post("/workers/{worker_id}/conversations", response_model=dict, status_code=201)
+@router.post("/workers/{worker_id}/conversations", response_model=dict, status_code=201, tags=["Conversations"])
 async def create_conversation(
     worker_id: str,
     request: CreateConversationRequest,
@@ -229,7 +229,7 @@ async def create_conversation(
         raise HTTPException(status_code=500, detail=f"Failed to create conversation: {str(e)}")
 
 
-@router.get("/workers/{worker_id}/conversations/{conversation_id}", response_model=ConversationResponse)
+@router.get("/workers/{worker_id}/conversations/{conversation_id}", response_model=ConversationResponse, tags=["Conversations"])
 async def get_conversation(
     worker_id: str,
     conversation_id: str,
@@ -267,7 +267,7 @@ async def get_conversation(
         raise HTTPException(status_code=500, detail=f"Failed to get conversation: {str(e)}")
 
 
-@router.post("/workers/{worker_id}/conversations/{conversation_id}/clone", response_model=dict, status_code=201)
+@router.post("/workers/{worker_id}/conversations/{conversation_id}/clone", response_model=dict, status_code=201, tags=["Conversations"])
 async def clone_conversation(
     worker_id: str,
     conversation_id: str,
@@ -303,7 +303,7 @@ async def clone_conversation(
         raise HTTPException(status_code=500, detail=f"Failed to clone conversation: {str(e)}")
 
 
-@router.delete("/workers/{worker_id}/conversations/{conversation_id}", response_model=dict)
+@router.delete("/workers/{worker_id}/conversations/{conversation_id}", response_model=dict, tags=["Conversations"])
 async def delete_conversation(
     worker_id: str,
     conversation_id: str,
@@ -344,7 +344,7 @@ async def delete_conversation(
         raise HTTPException(status_code=500, detail=f"Failed to delete conversation: {str(e)}")
 
 
-@router.post("/workers/{worker_id}/conversations/{conversation_id}/switch", response_model=dict)
+@router.post("/workers/{worker_id}/conversations/{conversation_id}/switch", response_model=dict, tags=["Conversations"])
 async def switch_conversation(
     worker_id: str,
     conversation_id: str,
@@ -378,7 +378,7 @@ async def switch_conversation(
         raise HTTPException(status_code=500, detail=f"Failed to switch conversation: {str(e)}")
 
 
-@router.patch("/workers/{worker_id}/conversations/{conversation_id}", response_model=dict)
+@router.patch("/workers/{worker_id}/conversations/{conversation_id}", response_model=dict, tags=["Conversations"])
 async def rename_conversation(
     worker_id: str,
     conversation_id: str,
@@ -421,7 +421,7 @@ async def rename_conversation(
         raise HTTPException(status_code=500, detail=f"Failed to rename conversation: {str(e)}")
 
 
-@router.get("/workers/{worker_id}/conversations/{conversation_id}/messages", response_model=ConversationMessageResponse)
+@router.get("/workers/{worker_id}/conversations/{conversation_id}/messages", response_model=ConversationMessageResponse, tags=["Conversations"])
 async def get_conversation_messages(
     worker_id: str,
     conversation_id: str,
@@ -455,7 +455,7 @@ async def get_conversation_messages(
         raise HTTPException(status_code=500, detail=f"Failed to get conversation messages: {str(e)}")
 
 
-@router.get("/workers/{worker_id}/conversations/current", response_model=dict)
+@router.get("/workers/{worker_id}/conversations/current", response_model=dict, tags=["Conversations"])
 async def get_current_conversation(
     worker_id: str,
     manager: WorkerManager = Depends(get_worker_manager)
@@ -488,7 +488,7 @@ async def get_current_conversation(
 
 # === Other Endpoints ===
 
-@router.get("/workers/types", response_model=dict)
+@router.get("/workers/types", response_model=dict, tags=["Workers"])
 async def list_worker_types():
     """
     List available worker types.
@@ -502,7 +502,7 @@ async def list_worker_types():
     }
 
 
-@router.get("/ai-clis", response_model=AICLIListResponse)
+@router.get("/ai-clis", response_model=AICLIListResponse, tags=["System"])
 async def list_ai_clis():
     """
     List available AI CLIs.
@@ -518,7 +518,7 @@ async def list_ai_clis():
     )
 
 
-@router.get("/health", response_model=dict)
+@router.get("/health", response_model=dict, tags=["System"])
 async def health_check(manager: WorkerManager = Depends(get_worker_manager)):
     """
     Health check endpoint.
