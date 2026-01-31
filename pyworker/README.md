@@ -1,4 +1,4 @@
-# py-worker - Python Implementation
+# pyworker - Python Implementation
 
 Python implementation of the AI Code Worker Manager using FastAPI.
 
@@ -22,7 +22,7 @@ Python implementation of the AI Code Worker Manager using FastAPI.
 ### 1. Install Dependencies
 
 ```bash
-cd py-worker
+cd pyworker
 pip install -r requirements.txt
 ```
 
@@ -30,21 +30,21 @@ pip install -r requirements.txt
 
 **⚠️ Important: .env File Location**
 
-The `.env` file must be placed in the `py-worker/` directory (project root), not in subdirectories.
+The `.env` file must be placed in the `pyworker/` directory (project root), not in subdirectories.
 
 ```bash
 # Correct location
-/home/twwyzh/sreworker/py-worker/.env  ✅
+/home/twwyzh/sreworker/pyworker/.env  ✅
 
 # Wrong locations
-/home/twwyzh/sreworker/py-worker/app/.env  ❌
+/home/twwyzh/sreworker/pyworker/app/.env  ❌
 /home/twwyzh/sreworker/.env  ❌
 ```
 
 **Setup:**
 
 ```bash
-cd /home/twwyzh/sreworker/py-worker  # Make sure you're in the right directory
+cd /home/twwyzh/sreworker/pyworker  # Make sure you're in the right directory
 cp .env.example .env
 # Edit .env file with your configuration
 ```
@@ -172,7 +172,7 @@ WORKER_TIMEOUT=300
 ## Project Structure
 
 ```
-py-worker/
+pyworker/
 ├── app/
 │   ├── __init__.py
 │   ├── main.py                 # FastAPI application
@@ -450,7 +450,7 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "7788"]
 
 ### Using Systemd
 
-Create `/etc/systemd/system/py-worker.service`:
+Create `/etc/systemd/system/pyworker.service`:
 
 ```ini
 [Unit]
@@ -460,7 +460,7 @@ After=network.target
 [Service]
 Type=simple
 User=www-data
-WorkingDirectory=/path/to/py-worker
+WorkingDirectory=/path/to/pyworker
 Environment="PATH=/path/to/venv/bin"
 ExecStart=/path/to/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 7788
 Restart=always

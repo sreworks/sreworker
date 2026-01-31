@@ -77,7 +77,7 @@
 ```bash
 # 1. 克隆并安装
 git clone <repository-url>
-cd py-worker
+cd pyworker
 pip install -r requirements.txt
 
 # 2. 配置环境（两种方式任选其一）
@@ -248,7 +248,7 @@ ai-code-worker-manager/
 │   ├── api-reference.md         # API 参考文档
 │   └── deployment.md            # 部署指南
 │
-├── py-worker/                   # 🐍 Python 实现 (FastAPI)
+├── pyworker/                   # 🐍 Python 实现 (FastAPI)
 │   ├── README.md
 │   ├── requirements.txt
 │   ├── .env.example
@@ -344,7 +344,7 @@ ai-code-worker-manager/
 
 ## 🎯 选择哪个实现？
 
-### Python 实现 (py-worker)
+### Python 实现 (pyworker)
 
 **推荐场景：**
 - 需要快速部署和开发
@@ -359,7 +359,7 @@ ai-code-worker-manager/
 
 **启动方式：**
 ```bash
-cd py-worker
+cd pyworker
 pip install -r requirements.txt
 uvicorn app.main:app --host 0.0.0.0 --port 7788
 ```
@@ -406,7 +406,7 @@ npm start
 - Git
 - 至少一个 AI Code CLI（Claude Code、OpenCode 等）
 
-**Python 实现 (py-worker)：**
+**Python 实现 (pyworker)：**
 - Python 3.9+
 
 **JavaScript 实现 (js-worker)：**
@@ -420,7 +420,7 @@ npm start
 1. **克隆项目并进入目录**
 ```bash
 git clone <repository-url>
-cd ai-code-worker-manager/py-worker
+cd ai-code-worker-manager/pyworker
 ```
 
 2. **创建虚拟环境**
@@ -774,7 +774,7 @@ ws://localhost:7788/ws/{worker_id}
 
 #### 运行测试
 ```bash
-cd py-worker
+cd pyworker
 pytest tests/ -v
 ```
 

@@ -26,7 +26,7 @@ class Settings(BaseSettings):
 
 ```
 sreworker/
-├── py-worker/              # 项目根目录
+├── pyworker/              # 项目根目录
 │   ├── .env               # ✅ .env 文件放在这里
 │   ├── .env.example       # 配置模板
 │   ├── app/               # 应用代码
@@ -38,53 +38,53 @@ sreworker/
 ### .env 文件位置
 
 ```bash
-/home/twwyzh/sreworker/py-worker/.env  # ✅ 正确位置
+/home/twwyzh/sreworker/pyworker/.env  # ✅ 正确位置
 ```
 
 ## 🚀 启动方式与 .env 路径对应关系
 
-### ✅ 方式 1：推荐方式（从 py-worker 目录启动）
+### ✅ 方式 1：推荐方式（从 pyworker 目录启动）
 
 ```bash
-cd /home/twwyzh/sreworker/py-worker
+cd /home/twwyzh/sreworker/pyworker
 uvicorn app.main:app --host 0.0.0.0 --port 7788
 ```
 
-- **工作目录**: `/home/twwyzh/sreworker/py-worker`
-- **.env 位置**: `/home/twwyzh/sreworker/py-worker/.env` ✅
+- **工作目录**: `/home/twwyzh/sreworker/pyworker`
+- **.env 位置**: `/home/twwyzh/sreworker/pyworker/.env` ✅
 - **结果**: 正常加载配置
 
 ### ✅ 方式 2：使用 python -m 启动
 
 ```bash
-cd /home/twwyzh/sreworker/py-worker
+cd /home/twwyzh/sreworker/pyworker
 python -m app.main
 ```
 
-- **工作目录**: `/home/twwyzh/sreworker/py-worker`
-- **.env 位置**: `/home/twwyzh/sreworker/py-worker/.env` ✅
+- **工作目录**: `/home/twwyzh/sreworker/pyworker`
+- **.env 位置**: `/home/twwyzh/sreworker/pyworker/.env` ✅
 - **结果**: 正常加载配置
 
 ### ⚠️ 方式 3：从父目录启动（不推荐）
 
 ```bash
 cd /home/twwyzh/sreworker
-uvicorn py-worker.app.main:app --host 0.0.0.0 --port 7788
+uvicorn pyworker.app.main:app --host 0.0.0.0 --port 7788
 ```
 
 - **工作目录**: `/home/twwyzh/sreworker`
-- **.env 位置**: `/home/twwyzh/sreworker/.env` ⚠️（不是 py-worker/.env）
+- **.env 位置**: `/home/twwyzh/sreworker/.env` ⚠️（不是 pyworker/.env）
 - **结果**: 需要在父目录创建 .env 文件
 
 ### ❌ 错误示例
 
 ```bash
-cd /home/twwyzh/sreworker/py-worker/app
+cd /home/twwyzh/sreworker/pyworker/app
 python main.py
 ```
 
-- **工作目录**: `/home/twwyzh/sreworker/py-worker/app`
-- **.env 位置**: `/home/twwyzh/sreworker/py-worker/app/.env` ❌
+- **工作目录**: `/home/twwyzh/sreworker/pyworker/app`
+- **.env 位置**: `/home/twwyzh/sreworker/pyworker/app/.env` ❌
 - **结果**: 找不到配置文件
 
 ## 🛠️ 快速设置
@@ -92,7 +92,7 @@ python main.py
 ### 1. 创建 .env 文件
 
 ```bash
-cd /home/twwyzh/sreworker/py-worker
+cd /home/twwyzh/sreworker/pyworker
 cp .env.example .env
 ```
 
@@ -144,7 +144,7 @@ Starting AI Code Worker Manager...
 ### 方法 2：使用 Python 测试
 
 ```bash
-cd /home/twwyzh/sreworker/py-worker
+cd /home/twwyzh/sreworker/pyworker
 python3 -c "
 from app.config import settings
 print(f'Port: {settings.port}')
@@ -168,9 +168,9 @@ print(f'.env exists: {os.path.exists(\".env\")}')
 
 ### ✅ 推荐做法
 
-1. **始终从 py-worker 目录启动**
+1. **始终从 pyworker 目录启动**
    ```bash
-   cd /home/twwyzh/sreworker/py-worker
+   cd /home/twwyzh/sreworker/pyworker
    uvicorn app.main:app --host 0.0.0.0 --port 7788
    ```
 
@@ -237,15 +237,15 @@ export PORT=8888           # 环境变量
 ### Q1: 配置没有生效？
 
 **检查清单：**
-- [ ] .env 文件在正确位置（py-worker/.env）
-- [ ] 启动命令的工作目录是 py-worker/
+- [ ] .env 文件在正确位置（pyworker/.env）
+- [ ] 启动命令的工作目录是 pyworker/
 - [ ] .env 文件格式正确（KEY=VALUE，无引号）
 - [ ] 重启了服务（配置更改后需要重启）
 
 ### Q2: 如何确认 .env 文件路径？
 
 ```bash
-cd /home/twwyzh/sreworker/py-worker
+cd /home/twwyzh/sreworker/pyworker
 pwd                        # 显示当前目录
 ls -la .env               # 检查 .env 是否存在
 ```
@@ -278,7 +278,7 @@ ENV_FILE=.env.dev uvicorn app.main:app
 ## 总结
 
 **关键点：**
-- ✅ .env 文件放在 `py-worker/.env`
-- ✅ 从 `py-worker/` 目录启动服务
-- ✅ 使用 `cd py-worker && uvicorn app.main:app` 启动
+- ✅ .env 文件放在 `pyworker/.env`
+- ✅ 从 `pyworker/` 目录启动服务
+- ✅ 使用 `cd pyworker && uvicorn app.main:app` 启动
 - ✅ 或者直接使用系统环境变量（推荐）
