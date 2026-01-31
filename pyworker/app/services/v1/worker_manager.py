@@ -1,4 +1,4 @@
-"""Worker manager service for managing multiple workers - V1"""
+"""Worker manager service for managing workers and conversations - V1"""
 
 import os
 from datetime import datetime
@@ -11,24 +11,21 @@ from ...workers import handlers
 from ...workers.v1 import BaseWorker
 from ...utils.logger import get_app_logger
 from .database import DatabaseManager
+from .process_handler import ProcessHandler
 
 
 class WorkerManager:
-    """Manager for multiple AI Code workers - V1 implementation"""
+    """Manager for workers (DB records) and conversations (runtime)"""
 
     def __init__(self, config):
-        """
-        Initialize the worker manager.
-
-        Args:
-            config: Application configuration
-        """
         self.config = config
-        self.workers: Dict[str, BaseWorker] = {}
-        self.worker_models: Dict[str, WorkerModel] = {}
-        self.websocket_connections: Dict[str, Set[WebSocket]] = {}
-        self.message_history: Dict[str, List[Dict[str, Any]]] = {}
         self.logger = get_app_logger()
+
+        # 运行中的 conversation 实例 {conversation_id: ConversationRunner}
+        self.conversations: Dict[str, 'ConversationRunner'] = {}
+
+        # WebSocket 连接 {conversation_id: Set[WebSocket]}
+        self.websocket_connections: Dict[str, Set[WebSocket]] = {}
 
         # Initialize database
         self.db: Optional[DatabaseManager] = None
@@ -40,24 +37,10 @@ class WorkerManager:
                 self.logger.error(f"Failed to initialize database: {e}")
                 self.logger.warning("Running without database persistence")
 
-    async def create_worker(self, request: CreateWorkerRequest) -> WorkerModel:
-        """
-        Create a new worker.
+    # === Worker 方法 (纯数据库操作) ===
 
-        Args:
-            request: Worker creation request
-
-        Returns:
-            Created worker model
-
-        Raises:
-            ValueError: If worker creation fails
-        """
-        # Check max workers limit
-        if len(self.workers) >= self.config.max_workers:
-            raise ValueError(f"Maximum number of workers ({self.config.max_workers}) reached")
-
-        # Validate type
+    def create_worker(self, request: CreateWorkerRequest) -> WorkerModel:
+        """创建 worker (只写数据库)"""
         worker_type = request.type.lower()
         if worker_type not in handlers:
             raise ValueError(
@@ -67,352 +50,426 @@ class WorkerManager:
 
         worker_id = str(uuid.uuid4())
 
-        self.logger.info(f"Creating worker: {worker_id} with type: {worker_type}")
+        worker_model = WorkerModel(
+            id=worker_id,
+            type=worker_type,
+            env_vars=request.env_vars or {},
+            command_params=request.command_params or []
+        )
 
-        try:
-            # 创建输出回调
-            def output_callback(data: Dict[str, Any]):
-                self._handle_worker_output(worker_id, data)
+        if self.db:
+            self.db.create_worker({
+                'id': worker_model.id,
+                'type': worker_model.type,
+                'env_vars': worker_model.env_vars,
+                'command_params': worker_model.command_params,
+                'created_at': worker_model.created_at
+            })
 
-            # 构建 worker config
-            worker_config = {
-                'env_vars': request.env_vars or {},
-                'command_params': request.command_params or []
-            }
-
-            # 创建 worker 实例
-            WorkerClass = handlers[worker_type]
-            worker = WorkerClass(
-                worker_id=worker_id,
-                config=worker_config,
-                output_callback=output_callback,
-                db=self.db
-            )
-
-            # 启动 worker
-            success = await worker.start()
-            if not success:
-                raise RuntimeError("Failed to start worker")
-
-            # 创建 worker model
-            worker_model = WorkerModel(
-                id=worker_id,
-                type=request.type,
-                env_vars=request.env_vars or {},
-                command_params=request.command_params or []
-            )
-
-            # 存储到内存
-            self.workers[worker_id] = worker
-            self.worker_models[worker_id] = worker_model
-            self.message_history[worker_id] = []
-            self.websocket_connections[worker_id] = set()
-
-            # 保存到数据库
-            if self.db:
-                worker_data = {
-                    'id': worker_model.id,
-                    'type': worker_model.type,
-                    'env_vars': worker_model.env_vars,
-                    'command_params': worker_model.command_params,
-                    'created_at': worker_model.created_at
-                }
-                self.db.create_worker(worker_data)
-
-            self.logger.info(f"Worker created successfully: {worker_id}")
-
-            return worker_model
-
-        except Exception as e:
-            self.logger.error(f"Failed to create worker: {e}")
-            # Cleanup on failure
-            if worker_id in self.workers:
-                try:
-                    await self.workers[worker_id].stop()
-                except Exception:
-                    pass
-                del self.workers[worker_id]
-            if worker_id in self.worker_models:
-                del self.worker_models[worker_id]
-            raise ValueError(f"Failed to create worker: {e}")
-
-    async def delete_worker(self, worker_id: str) -> None:
-        """
-        Delete a worker.
-
-        Args:
-            worker_id: Worker ID to delete
-
-        Raises:
-            ValueError: If worker not found
-        """
-        if worker_id not in self.workers:
-            raise ValueError(f"Worker not found: {worker_id}")
-
-        self.logger.info(f"Deleting worker: {worker_id}")
-
-        try:
-            # Stop worker
-            worker = self.workers[worker_id]
-            await worker.stop()
-
-            # Close WebSocket connections
-            if worker_id in self.websocket_connections:
-                for ws in self.websocket_connections[worker_id]:
-                    try:
-                        await ws.close()
-                    except Exception:
-                        pass
-                del self.websocket_connections[worker_id]
-
-            # Remove from database
-            if self.db:
-                self.db.delete_worker(worker_id)
-
-            # Remove worker data from memory
-            del self.workers[worker_id]
-            del self.worker_models[worker_id]
-            if worker_id in self.message_history:
-                del self.message_history[worker_id]
-
-            self.logger.info(f"Worker deleted: {worker_id}")
-
-        except Exception as e:
-            self.logger.error(f"Error deleting worker {worker_id}: {e}")
-            raise
+        self.logger.info(f"Worker created: {worker_id} (type: {worker_type})")
+        return worker_model
 
     def get_worker(self, worker_id: str) -> Optional[WorkerModel]:
-        """
-        Get a worker model by ID.
+        """获取 worker (从数据库)"""
+        if not self.db:
+            return None
 
-        Args:
-            worker_id: Worker ID
+        data = self.db.get_worker(worker_id)
+        if not data:
+            return None
 
-        Returns:
-            Worker model, or None if not found
-        """
-        return self.worker_models.get(worker_id)
-
-    def get_worker_instance(self, worker_id: str) -> Optional[BaseWorker]:
-        """
-        Get a worker instance by ID.
-
-        Args:
-            worker_id: Worker ID
-
-        Returns:
-            Worker instance, or None if not found
-        """
-        return self.workers.get(worker_id)
+        return WorkerModel(
+            id=data['id'],
+            type=data['type'],
+            env_vars=data.get('env_vars', {}),
+            command_params=data.get('command_params', []),
+            created_at=data.get('created_at', datetime.utcnow())
+        )
 
     def list_workers(self) -> List[WorkerModel]:
-        """
-        List all workers.
+        """列出所有 workers (从数据库)"""
+        if not self.db:
+            return []
 
-        Returns:
-            List of worker models
-        """
-        return list(self.worker_models.values())
+        workers_data = self.db.list_workers()
+        return [
+            WorkerModel(
+                id=data['id'],
+                type=data['type'],
+                env_vars=data.get('env_vars', {}),
+                command_params=data.get('command_params', []),
+                created_at=data.get('created_at', datetime.utcnow())
+            )
+            for data in workers_data
+        ]
 
-    async def send_message(self, worker_id: str, message: str, conversation_id: Optional[str] = None) -> bool:
-        """
-        Send a message to a worker.
+    def delete_worker(self, worker_id: str) -> None:
+        """删除 worker (从数据库)"""
+        if not self.db:
+            raise ValueError("Database not available")
 
-        Args:
-            worker_id: Worker ID
-            message: Message to send
-            conversation_id: Optional conversation ID
+        # 检查 worker 是否存在
+        if not self.db.get_worker(worker_id):
+            raise ValueError(f"Worker not found: {worker_id}")
 
-        Returns:
-            True if message was sent successfully, False otherwise
-        """
-        if worker_id not in self.workers:
-            self.logger.error(f"Worker not found: {worker_id}")
-            return False
+        # 停止该 worker 下所有运行中的 conversations
+        conversations_to_stop = [
+            conv_id for conv_id, runner in self.conversations.items()
+            if runner.worker_id == worker_id
+        ]
+        for conv_id in conversations_to_stop:
+            self._stop_conversation(conv_id)
 
-        worker = self.workers[worker_id]
+        self.db.delete_worker(worker_id)
+        self.logger.info(f"Worker deleted: {worker_id}")
 
-        # Send message to worker
-        success = await worker.send_message(message, conversation_id)
-
-        if success:
-            timestamp = datetime.utcnow()
-
-            # Store message in history (memory)
-            message_data = {
-                "type": "user",
-                "content": message,
-                "conversation_id": conversation_id,
-                "timestamp": timestamp.isoformat()
-            }
-            self.message_history[worker_id].append(message_data)
-
-            # Save to database
-            if self.db and conversation_id:
-                self.db.add_message({
-                    'conversation_id': conversation_id,
-                    'worker_id': worker_id,
-                    'role': 'user',
-                    'content': message,
-                    'timestamp': timestamp,
-                    'metadata': {}
-                })
-
-        return success
-
-    # === Conversation 相关方法 ===
+    # === Conversation 方法 ===
 
     async def new_conversation(self, worker_id: str, project_path: str, name: Optional[str] = None) -> str:
-        """创建新对话"""
-        worker = self._get_worker_instance(worker_id)
-        conversation_manager = worker.get_conversation_manager()
-        return await conversation_manager.new_conversation(project_path, name)
+        """创建新对话并启动进程"""
+        worker = self.get_worker(worker_id)
+        if not worker:
+            raise ValueError(f"Worker not found: {worker_id}")
 
-    async def clone_conversation(self, worker_id: str, conversation_id: str, new_name: Optional[str] = None) -> str:
-        """克隆对话"""
-        worker = self._get_worker_instance(worker_id)
-        conversation_manager = worker.get_conversation_manager()
-        return await conversation_manager.clone_conversation(conversation_id, new_name)
+        conversation_id = str(uuid.uuid4())
+        project_path = os.path.abspath(project_path)
+        conv_name = name or f"Conversation {conversation_id[:8]}"
+
+        # 保存到数据库
+        if self.db:
+            self.db.create_conversation({
+                'id': conversation_id,
+                'worker_id': worker_id,
+                'project_path': project_path,
+                'name': conv_name,
+                'created_at': datetime.utcnow(),
+                'last_activity': datetime.utcnow(),
+                'is_current': True,
+                'metadata': {}
+            })
+
+        # 创建并启动 conversation runner
+        runner = ConversationRunner(
+            conversation_id=conversation_id,
+            worker_id=worker_id,
+            worker_type=worker.type,
+            project_path=project_path,
+            env_vars=worker.env_vars,
+            command_params=worker.command_params,
+            output_callback=lambda data: self._handle_output(conversation_id, data),
+            logger=self.logger
+        )
+        await runner.start()
+        self.conversations[conversation_id] = runner
+
+        self.logger.info(f"Conversation created and started: {conversation_id}")
+        return conversation_id
 
     async def list_conversations(self, worker_id: str) -> List[Dict[str, Any]]:
-        """列出对话"""
-        worker = self._get_worker_instance(worker_id)
-        conversation_manager = worker.get_conversation_manager()
-        conversations = await conversation_manager.list_conversations()
-        return [c.to_dict() for c in conversations]
+        """列出 worker 的所有对话"""
+        if not self.db:
+            return []
+
+        # 检查 worker 是否存在
+        if not self.db.get_worker(worker_id):
+            raise ValueError(f"Worker not found: {worker_id}")
+
+        conversations = self.db.list_conversations(worker_id)
+        return [
+            {
+                'id': c['id'],
+                'name': c['name'],
+                'project_path': c['project_path'],
+                'created_at': c['created_at'].isoformat() if c.get('created_at') else None,
+                'last_activity': c['last_activity'].isoformat() if c.get('last_activity') else None,
+                'is_running': c['id'] in self.conversations,
+                'metadata': c.get('metadata', {})
+            }
+            for c in conversations
+        ]
 
     async def get_conversation(self, worker_id: str, conversation_id: str) -> Optional[Dict[str, Any]]:
-        """获取指定对话"""
-        worker = self._get_worker_instance(worker_id)
-        conversation_manager = worker.get_conversation_manager()
-        conversation = await conversation_manager.get_conversation(conversation_id)
-        return conversation.to_dict() if conversation else None
+        """获取对话详情"""
+        if not self.db:
+            return None
+
+        conv = self.db.get_conversation(conversation_id)
+        if not conv or conv.get('worker_id') != worker_id:
+            return None
+
+        return {
+            'id': conv['id'],
+            'name': conv['name'],
+            'project_path': conv['project_path'],
+            'created_at': conv['created_at'].isoformat() if conv.get('created_at') else None,
+            'last_activity': conv['last_activity'].isoformat() if conv.get('last_activity') else None,
+            'is_running': conv['id'] in self.conversations,
+            'metadata': conv.get('metadata', {})
+        }
 
     async def delete_conversation(self, worker_id: str, conversation_id: str) -> bool:
         """删除对话"""
-        worker = self._get_worker_instance(worker_id)
-        conversation_manager = worker.get_conversation_manager()
-        return await conversation_manager.delete_conversation(conversation_id)
+        if not self.db:
+            return False
+
+        conv = self.db.get_conversation(conversation_id)
+        if not conv or conv.get('worker_id') != worker_id:
+            return False
+
+        # 停止运行中的 conversation
+        if conversation_id in self.conversations:
+            await self._stop_conversation(conversation_id)
+
+        self.db.delete_conversation(conversation_id)
+        self.logger.info(f"Conversation deleted: {conversation_id}")
+        return True
+
+    async def start_conversation(self, worker_id: str, conversation_id: str) -> bool:
+        """启动已有的对话"""
+        if conversation_id in self.conversations:
+            return True  # 已经在运行
+
+        worker = self.get_worker(worker_id)
+        if not worker:
+            raise ValueError(f"Worker not found: {worker_id}")
+
+        if not self.db:
+            raise ValueError("Database not available")
+
+        conv = self.db.get_conversation(conversation_id)
+        if not conv or conv.get('worker_id') != worker_id:
+            raise ValueError(f"Conversation not found: {conversation_id}")
+
+        runner = ConversationRunner(
+            conversation_id=conversation_id,
+            worker_id=worker_id,
+            worker_type=worker.type,
+            project_path=conv['project_path'],
+            env_vars=worker.env_vars,
+            command_params=worker.command_params,
+            output_callback=lambda data: self._handle_output(conversation_id, data),
+            logger=self.logger
+        )
+        await runner.start()
+        self.conversations[conversation_id] = runner
+
+        self.logger.info(f"Conversation started: {conversation_id}")
+        return True
+
+    async def stop_conversation(self, worker_id: str, conversation_id: str) -> bool:
+        """停止对话"""
+        if conversation_id not in self.conversations:
+            return False
+
+        await self._stop_conversation(conversation_id)
+        return True
+
+    async def send_message(self, worker_id: str, conversation_id: str, message: str) -> bool:
+        """发送消息到对话"""
+        if conversation_id not in self.conversations:
+            # 尝试启动 conversation
+            await self.start_conversation(worker_id, conversation_id)
+
+        runner = self.conversations.get(conversation_id)
+        if not runner:
+            self.logger.error(f"Conversation not running: {conversation_id}")
+            return False
+
+        success = await runner.send_message(message)
+
+        if success and self.db:
+            self.db.add_message({
+                'conversation_id': conversation_id,
+                'worker_id': worker_id,
+                'role': 'user',
+                'content': message,
+                'timestamp': datetime.utcnow(),
+                'metadata': {}
+            })
+
+        return success
+
+    async def get_conversation_messages(self, worker_id: str, conversation_id: str) -> List[Dict[str, Any]]:
+        """获取对话消息"""
+        if not self.db:
+            return []
+        return self.db.get_conversation_messages(conversation_id)
+
+    async def clone_conversation(self, worker_id: str, conversation_id: str, new_name: Optional[str] = None) -> str:
+        """克隆对话"""
+        if not self.db:
+            raise ValueError("Database not available")
+
+        conv = self.db.get_conversation(conversation_id)
+        if not conv or conv.get('worker_id') != worker_id:
+            raise ValueError(f"Conversation not found: {conversation_id}")
+
+        new_id = str(uuid.uuid4())
+        clone_name = new_name or f"{conv['name']} (copy)"
+
+        self.db.create_conversation({
+            'id': new_id,
+            'worker_id': worker_id,
+            'project_path': conv['project_path'],
+            'name': clone_name,
+            'created_at': datetime.utcnow(),
+            'last_activity': datetime.utcnow(),
+            'is_current': False,
+            'metadata': conv.get('metadata', {})
+        })
+
+        self.logger.info(f"Conversation cloned: {conversation_id} -> {new_id}")
+        return new_id
 
     async def switch_conversation(self, worker_id: str, conversation_id: str) -> bool:
-        """切换对话"""
-        worker = self._get_worker_instance(worker_id)
-        conversation_manager = worker.get_conversation_manager()
-        return await conversation_manager.switch_conversation(conversation_id)
+        """切换当前对话"""
+        if not self.db:
+            raise ValueError("Database not available")
+
+        conv = self.db.get_conversation(conversation_id)
+        if not conv or conv.get('worker_id') != worker_id:
+            raise ValueError(f"Conversation not found: {conversation_id}")
+
+        # 将所有对话设为非当前，然后设置指定对话为当前
+        self.db.switch_conversation(worker_id, conversation_id)
+        self.logger.info(f"Switched to conversation: {conversation_id}")
+        return True
 
     async def rename_conversation(self, worker_id: str, conversation_id: str, new_name: str) -> bool:
         """重命名对话"""
-        worker = self._get_worker_instance(worker_id)
-        conversation_manager = worker.get_conversation_manager()
-        return await conversation_manager.rename_conversation(conversation_id, new_name)
+        if not self.db:
+            return False
 
-    async def get_conversation_messages(self, worker_id: str, conversation_id: str) -> List[Dict[str, Any]]:
-        """获取对话消息历史"""
-        worker = self._get_worker_instance(worker_id)
-        conversation_manager = worker.get_conversation_manager()
-        return await conversation_manager.get_conversation_messages(conversation_id)
+        conv = self.db.get_conversation(conversation_id)
+        if not conv or conv.get('worker_id') != worker_id:
+            return False
+
+        self.db.update_conversation(conversation_id, {'name': new_name})
+        self.logger.info(f"Conversation renamed: {conversation_id} -> {new_name}")
+        return True
 
     def get_current_conversation(self, worker_id: str) -> Optional[str]:
         """获取当前对话 ID"""
-        worker = self._get_worker_instance(worker_id)
-        conversation_manager = worker.get_conversation_manager()
-        return conversation_manager.get_current_conversation()
+        if not self.db:
+            return None
 
-    def _get_worker_instance(self, worker_id: str) -> BaseWorker:
-        """获取 worker 实例（内部方法）"""
-        if worker_id not in self.workers:
+        # 检查 worker 是否存在
+        if not self.db.get_worker(worker_id):
             raise ValueError(f"Worker not found: {worker_id}")
-        return self.workers[worker_id]
 
-    def _handle_worker_output(self, worker_id: str, data: Dict[str, Any]) -> None:
-        """
-        Handle output from a worker.
+        return self.db.get_current_conversation(worker_id)
 
-        Args:
-            worker_id: Worker ID
-            data: Output data
-        """
-        # Update last activity
-        if worker_id in self.worker_models:
-            self.worker_models[worker_id].last_activity = datetime.utcnow()
+    # === 内部方法 ===
 
-        # Store in message history
-        if worker_id in self.message_history:
-            self.message_history[worker_id].append({
-                **data,
-                "timestamp": datetime.utcnow().isoformat()
-            })
+    async def _stop_conversation(self, conversation_id: str) -> None:
+        """停止 conversation"""
+        runner = self.conversations.pop(conversation_id, None)
+        if runner:
+            await runner.stop()
 
-        # Broadcast to WebSocket connections
-        if worker_id in self.websocket_connections:
+        # 关闭 WebSocket 连接
+        if conversation_id in self.websocket_connections:
+            for ws in self.websocket_connections[conversation_id]:
+                try:
+                    await ws.close()
+                except Exception:
+                    pass
+            del self.websocket_connections[conversation_id]
+
+    def _handle_output(self, conversation_id: str, data: Dict[str, Any]) -> None:
+        """处理 conversation 输出"""
+        # 广播到 WebSocket
+        if conversation_id in self.websocket_connections:
             import asyncio
-            for ws in list(self.websocket_connections[worker_id]):
+            for ws in list(self.websocket_connections[conversation_id]):
                 try:
                     asyncio.create_task(ws.send_json({
                         "type": "output",
+                        "conversation_id": conversation_id,
                         "timestamp": datetime.utcnow().isoformat(),
                         "content": data
                     }))
                 except Exception as e:
                     self.logger.error(f"Error sending to WebSocket: {e}")
-                    # Remove failed connection
-                    self.websocket_connections[worker_id].discard(ws)
+                    self.websocket_connections[conversation_id].discard(ws)
 
-    async def register_websocket(self, worker_id: str, websocket: WebSocket) -> None:
-        """
-        Register a WebSocket connection for a worker.
+    async def register_websocket(self, conversation_id: str, websocket: WebSocket) -> None:
+        """注册 WebSocket 连接"""
+        if conversation_id not in self.websocket_connections:
+            self.websocket_connections[conversation_id] = set()
+        self.websocket_connections[conversation_id].add(websocket)
 
-        Args:
-            worker_id: Worker ID
-            websocket: WebSocket connection
-        """
-        if worker_id not in self.worker_models:
-            raise ValueError(f"Worker not found: {worker_id}")
-
-        if worker_id not in self.websocket_connections:
-            self.websocket_connections[worker_id] = set()
-
-        self.websocket_connections[worker_id].add(websocket)
-        self.logger.info(f"WebSocket registered for worker: {worker_id}")
-
-    async def unregister_websocket(self, worker_id: str, websocket: WebSocket) -> None:
-        """
-        Unregister a WebSocket connection for a worker.
-
-        Args:
-            worker_id: Worker ID
-            websocket: WebSocket connection
-        """
-        if worker_id in self.websocket_connections:
-            self.websocket_connections[worker_id].discard(websocket)
-            self.logger.info(f"WebSocket unregistered for worker: {worker_id}")
-
-    def get_message_history(self, worker_id: str, limit: int = 100) -> List[Dict[str, Any]]:
-        """
-        Get message history for a worker.
-
-        Args:
-            worker_id: Worker ID
-            limit: Maximum number of messages to return
-
-        Returns:
-            List of messages
-        """
-        if worker_id not in self.message_history:
-            return []
-
-        history = self.message_history[worker_id]
-        return history[-limit:] if len(history) > limit else history
+    async def unregister_websocket(self, conversation_id: str, websocket: WebSocket) -> None:
+        """注销 WebSocket 连接"""
+        if conversation_id in self.websocket_connections:
+            self.websocket_connections[conversation_id].discard(websocket)
 
     async def shutdown(self) -> None:
-        """Shutdown all workers."""
-        self.logger.info("Shutting down all workers...")
+        """关闭所有 conversations"""
+        self.logger.info("Shutting down all conversations...")
+        for conv_id in list(self.conversations.keys()):
+            await self._stop_conversation(conv_id)
+        self.logger.info("All conversations shut down")
 
-        worker_ids = list(self.workers.keys())
-        for worker_id in worker_ids:
-            try:
-                await self.delete_worker(worker_id)
-            except Exception as e:
-                self.logger.error(f"Error shutting down worker {worker_id}: {e}")
 
-        self.logger.info("All workers shut down")
+class ConversationRunner:
+    """运行中的 conversation 实例"""
+
+    def __init__(
+        self,
+        conversation_id: str,
+        worker_id: str,
+        worker_type: str,
+        project_path: str,
+        env_vars: Dict[str, str],
+        command_params: List[str],
+        output_callback,
+        logger
+    ):
+        self.conversation_id = conversation_id
+        self.worker_id = worker_id
+        self.worker_type = worker_type
+        self.project_path = project_path
+        self.env_vars = env_vars
+        self.command_params = command_params
+        self.output_callback = output_callback
+        self.logger = logger
+        self.process_handler: Optional[ProcessHandler] = None
+
+    async def start(self) -> bool:
+        """启动进程"""
+        from ...adapters.v1 import adapter_registry
+
+        adapter = adapter_registry.get_adapter(self.worker_type)
+        if not adapter:
+            self.logger.error(f"Adapter not found for type: {self.worker_type}")
+            return False
+
+        self.process_handler = ProcessHandler(
+            worker_id=self.conversation_id,  # 使用 conversation_id 作为标识
+            project_path=self.project_path,
+            adapter=adapter,
+            output_callback=self.output_callback
+        )
+
+        success = await self.process_handler.start()
+        if success:
+            self.logger.info(f"Process started for conversation: {self.conversation_id}")
+        return success
+
+    async def stop(self) -> None:
+        """停止进程"""
+        if self.process_handler:
+            await self.process_handler.stop()
+            self.process_handler = None
+            self.logger.info(f"Process stopped for conversation: {self.conversation_id}")
+
+    async def send_message(self, message: str) -> bool:
+        """发送消息"""
+        if not self.process_handler:
+            return False
+        return await self.process_handler.send_message(message)
+
+    def is_running(self) -> bool:
+        """检查是否运行中"""
+        return self.process_handler is not None and self.process_handler.is_alive()

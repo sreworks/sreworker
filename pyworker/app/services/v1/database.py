@@ -49,8 +49,7 @@ class DatabaseManager:
                     type VARCHAR NOT NULL,
                     env_vars JSON,
                     command_params JSON,
-                    created_at TIMESTAMP NOT NULL,
-                    INDEX idx_workers_type (type)
+                    created_at TIMESTAMP NOT NULL
                 )
             """)
 
@@ -64,11 +63,7 @@ class DatabaseManager:
                     created_at TIMESTAMP NOT NULL,
                     last_activity TIMESTAMP NOT NULL,
                     is_current BOOLEAN DEFAULT FALSE,
-                    metadata JSON,
-                    INDEX idx_conversations_worker (worker_id),
-                    INDEX idx_conversations_project (project_path),
-                    INDEX idx_conversations_current (worker_id, is_current),
-                    FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE CASCADE
+                    metadata JSON
                 )
             """)
 
@@ -81,14 +76,18 @@ class DatabaseManager:
                     role VARCHAR NOT NULL,
                     content TEXT NOT NULL,
                     timestamp TIMESTAMP NOT NULL,
-                    metadata JSON,
-                    INDEX idx_messages_conversation (conversation_id),
-                    INDEX idx_messages_worker (worker_id),
-                    INDEX idx_messages_timestamp (timestamp),
-                    FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
-                    FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE CASCADE
+                    metadata JSON
                 )
             """)
+
+            # Create indexes separately (DuckDB syntax)
+            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_workers_type ON workers(type)")
+            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_conversations_worker ON conversations(worker_id)")
+            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_conversations_project ON conversations(project_path)")
+            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_conversations_current ON conversations(worker_id, is_current)")
+            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id)")
+            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_worker ON messages(worker_id)")
+            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp)")
 
             # Create sequence for message IDs
             self.conn.execute("""
@@ -124,6 +123,7 @@ class DatabaseManager:
                 json.dumps(worker_data.get('command_params', [])),
                 worker_data['created_at']
             ])
+            self.conn.commit()
             self.logger.info(f"Created worker record: {worker_data['id']}")
             return True
         except Exception as e:
@@ -200,6 +200,7 @@ class DatabaseManager:
         """
         try:
             self.conn.execute("DELETE FROM workers WHERE id = ?", [worker_id])
+            self.conn.commit()
             self.logger.info(f"Deleted worker record: {worker_id}")
             return True
         except Exception as e:
@@ -240,6 +241,7 @@ class DatabaseManager:
                 conversation_data.get('is_current', False),
                 json.dumps(conversation_data.get('metadata', {}))
             ])
+            self.conn.commit()
             self.logger.info(f"Created conversation record: {conversation_data['id']}")
             return True
         except Exception as e:
@@ -363,6 +365,7 @@ class DatabaseManager:
                 WHERE id = ? AND worker_id = ?
             """, [datetime.utcnow(), conversation_id, worker_id])
 
+            self.conn.commit()
             return True
         except Exception as e:
             self.logger.error(f"Failed to switch conversation: {e}")
@@ -380,6 +383,7 @@ class DatabaseManager:
         """
         try:
             self.conn.execute("DELETE FROM conversations WHERE id = ?", [conversation_id])
+            self.conn.commit()
             self.logger.info(f"Deleted conversation record: {conversation_id}")
             return True
         except Exception as e:
@@ -420,6 +424,7 @@ class DatabaseManager:
             query = f"UPDATE conversations SET {', '.join(set_clauses)} WHERE id = ?"
 
             self.conn.execute(query, params)
+            self.conn.commit()
             return True
         except Exception as e:
             self.logger.error(f"Failed to update conversation: {e}")
@@ -453,6 +458,7 @@ class DatabaseManager:
 
             message_id = result[0] if result else None
             if message_id:
+                self.conn.commit()
                 self.logger.debug(f"Added message {message_id} to conversation {message_data['conversation_id']}")
             return message_id
         except Exception as e:

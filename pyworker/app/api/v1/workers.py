@@ -77,7 +77,7 @@ async def create_worker(
         HTTPException: If worker creation fails
     """
     try:
-        worker = await manager.create_worker(request)
+        worker = manager.create_worker(request)
 
         return WorkerResponse(
             id=worker.id,
@@ -156,7 +156,7 @@ async def delete_worker(
         HTTPException: If worker not found or deletion fails
     """
     try:
-        await manager.delete_worker(worker_id)
+        manager.delete_worker(worker_id)
         return {
             "status": "deleted",
             "message": f"Worker {worker_id} deleted successfully"
