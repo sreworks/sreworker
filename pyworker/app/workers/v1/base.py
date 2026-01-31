@@ -8,17 +8,15 @@ from ...services.v1.conversation_manager import BaseConversationManager
 class BaseWorker(ABC):
     """Worker 业务逻辑抽象接口"""
 
-    def __init__(self, worker_id: str, project_path: str, config: Dict[str, Any]):
+    def __init__(self, worker_id: str, config: Dict[str, Any]):
         """
         初始化 Worker
 
         Args:
             worker_id: Worker 唯一标识符
-            project_path: 项目路径
             config: Worker 配置
         """
         self.worker_id = worker_id
-        self.project_path = project_path
         self.config = config
         self._conversation_manager: Optional[BaseConversationManager] = None
 

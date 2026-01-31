@@ -42,12 +42,11 @@ class DatabaseManager:
     def _init_schema(self):
         """Initialize database schema"""
         try:
-            # Workers table
+            # Workers table (project_path removed - it belongs to conversation)
             self.conn.execute("""
                 CREATE TABLE IF NOT EXISTS workers (
                     id VARCHAR PRIMARY KEY,
                     name VARCHAR NOT NULL,
-                    project_path VARCHAR NOT NULL,
                     ai_cli_type VARCHAR NOT NULL,
                     status VARCHAR NOT NULL,
                     config JSON,
@@ -58,17 +57,19 @@ class DatabaseManager:
                 )
             """)
 
-            # Conversations table
+            # Conversations table (project_path added here)
             self.conn.execute("""
                 CREATE TABLE IF NOT EXISTS conversations (
                     id VARCHAR PRIMARY KEY,
                     worker_id VARCHAR NOT NULL,
+                    project_path VARCHAR NOT NULL,
                     name VARCHAR NOT NULL,
                     created_at TIMESTAMP NOT NULL,
                     last_activity TIMESTAMP NOT NULL,
                     is_current BOOLEAN DEFAULT FALSE,
                     metadata JSON,
                     INDEX idx_conversations_worker (worker_id),
+                    INDEX idx_conversations_project (project_path),
                     INDEX idx_conversations_current (worker_id, is_current),
                     FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE CASCADE
                 )
@@ -117,12 +118,11 @@ class DatabaseManager:
         """
         try:
             self.conn.execute("""
-                INSERT INTO workers (id, name, project_path, ai_cli_type, status, config, created_at, last_activity)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO workers (id, name, ai_cli_type, status, config, created_at, last_activity)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             """, [
                 worker_data['id'],
                 worker_data['name'],
-                worker_data['project_path'],
                 worker_data['ai_cli_type'],
                 worker_data['status'],
                 json.dumps(worker_data.get('config', {})),
@@ -147,7 +147,7 @@ class DatabaseManager:
         """
         try:
             result = self.conn.execute("""
-                SELECT id, name, project_path, ai_cli_type, status, config, created_at, last_activity
+                SELECT id, name, ai_cli_type, status, config, created_at, last_activity
                 FROM workers
                 WHERE id = ?
             """, [worker_id]).fetchone()
@@ -156,12 +156,11 @@ class DatabaseManager:
                 return {
                     'id': result[0],
                     'name': result[1],
-                    'project_path': result[2],
-                    'ai_cli_type': result[3],
-                    'status': result[4],
-                    'config': json.loads(result[5]) if result[5] else {},
-                    'created_at': result[6],
-                    'last_activity': result[7]
+                    'ai_cli_type': result[2],
+                    'status': result[3],
+                    'config': json.loads(result[4]) if result[4] else {},
+                    'created_at': result[5],
+                    'last_activity': result[6]
                 }
             return None
         except Exception as e:
@@ -177,7 +176,7 @@ class DatabaseManager:
         """
         try:
             results = self.conn.execute("""
-                SELECT id, name, project_path, ai_cli_type, status, config, created_at, last_activity
+                SELECT id, name, ai_cli_type, status, config, created_at, last_activity
                 FROM workers
                 ORDER BY created_at DESC
             """).fetchall()
@@ -187,12 +186,11 @@ class DatabaseManager:
                 workers.append({
                     'id': row[0],
                     'name': row[1],
-                    'project_path': row[2],
-                    'ai_cli_type': row[3],
-                    'status': row[4],
-                    'config': json.loads(row[5]) if row[5] else {},
-                    'created_at': row[6],
-                    'last_activity': row[7]
+                    'ai_cli_type': row[2],
+                    'status': row[3],
+                    'config': json.loads(row[4]) if row[4] else {},
+                    'created_at': row[5],
+                    'last_activity': row[6]
                 })
             return workers
         except Exception as e:
@@ -265,11 +263,12 @@ class DatabaseManager:
                 """, [conversation_data['worker_id']])
 
             self.conn.execute("""
-                INSERT INTO conversations (id, worker_id, name, created_at, last_activity, is_current, metadata)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO conversations (id, worker_id, project_path, name, created_at, last_activity, is_current, metadata)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, [
                 conversation_data['id'],
                 conversation_data['worker_id'],
+                conversation_data['project_path'],
                 conversation_data['name'],
                 conversation_data['created_at'],
                 conversation_data['last_activity'],
@@ -294,7 +293,7 @@ class DatabaseManager:
         """
         try:
             result = self.conn.execute("""
-                SELECT id, worker_id, name, created_at, last_activity, is_current, metadata
+                SELECT id, worker_id, project_path, name, created_at, last_activity, is_current, metadata
                 FROM conversations
                 WHERE id = ?
             """, [conversation_id]).fetchone()
@@ -303,11 +302,12 @@ class DatabaseManager:
                 return {
                     'id': result[0],
                     'worker_id': result[1],
-                    'name': result[2],
-                    'created_at': result[3],
-                    'last_activity': result[4],
-                    'is_current': result[5],
-                    'metadata': json.loads(result[6]) if result[6] else {}
+                    'project_path': result[2],
+                    'name': result[3],
+                    'created_at': result[4],
+                    'last_activity': result[5],
+                    'is_current': result[6],
+                    'metadata': json.loads(result[7]) if result[7] else {}
                 }
             return None
         except Exception as e:
@@ -326,7 +326,7 @@ class DatabaseManager:
         """
         try:
             results = self.conn.execute("""
-                SELECT id, worker_id, name, created_at, last_activity, is_current, metadata
+                SELECT id, worker_id, project_path, name, created_at, last_activity, is_current, metadata
                 FROM conversations
                 WHERE worker_id = ?
                 ORDER BY last_activity DESC
@@ -337,11 +337,12 @@ class DatabaseManager:
                 conversations.append({
                     'id': row[0],
                     'worker_id': row[1],
-                    'name': row[2],
-                    'created_at': row[3],
-                    'last_activity': row[4],
-                    'is_current': row[5],
-                    'metadata': json.loads(row[6]) if row[6] else {}
+                    'project_path': row[2],
+                    'name': row[3],
+                    'created_at': row[4],
+                    'last_activity': row[5],
+                    'is_current': row[6],
+                    'metadata': json.loads(row[7]) if row[7] else {}
                 })
             return conversations
         except Exception as e:

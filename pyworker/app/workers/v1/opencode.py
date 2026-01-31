@@ -17,7 +17,6 @@ class OpenCodeWorker(BaseWorker):
     def __init__(
         self,
         worker_id: str,
-        project_path: str,
         config: Dict[str, Any],
         output_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
         db: Optional['DatabaseManager'] = None
@@ -27,12 +26,11 @@ class OpenCodeWorker(BaseWorker):
 
         Args:
             worker_id: Worker ID
-            project_path: 项目路径
             config: 配置信息
             output_callback: 输出回调函数
             db: 数据库管理器（可选）
         """
-        super().__init__(worker_id, project_path, config)
+        super().__init__(worker_id, config)
 
         # 初始化组件
         self.adapter = OpenCodeAdapter(config)
@@ -47,22 +45,51 @@ class OpenCodeWorker(BaseWorker):
     def _create_conversation_manager(self) -> BaseConversationManager:
         """创建 OpenCode 特定的对话管理器"""
         return OpenCodeConversationManager(
-            project_path=self.project_path,
             worker_id=self.worker_id,
             db=self.db
         )
 
     async def start(self) -> bool:
-        """启动 OpenCode worker"""
+        """
+        启动 OpenCode worker
+
+        注意：Worker 启动后不会立即创建进程，进程会在发送消息时按需创建
+        """
+        self.logger.info(f"OpenCode worker {self.worker_id} initialized successfully")
+        return True
+
+    async def _ensure_process_for_conversation(self, conversation_id: str) -> bool:
+        """
+        确保为指定对话创建进程
+
+        Args:
+            conversation_id: 对话 ID
+
+        Returns:
+            True if process is ready, False otherwise
+        """
+        conversation = await self._conversation_manager.get_conversation(conversation_id)
+        if not conversation:
+            self.logger.error(f"Conversation not found: {conversation_id}")
+            return False
+
+        project_path = conversation.project_path
+
+        # 如果进程已经在运行，检查是否是同一个项目
+        if self.process_handler and self.process_handler.is_alive():
+            if self.process_handler.project_path == project_path:
+                return True
+            # 不同项目，需要停止当前进程
+            await self._stop_process()
+
+        # 创建并启动新进程
         try:
-            # 创建输出回调
             def internal_output_callback(data: Dict[str, Any]):
                 self._handle_output(data)
 
-            # 创建并启动 ProcessHandler
             self.process_handler = ProcessHandler(
                 worker_id=self.worker_id,
-                project_path=self.project_path,
+                project_path=project_path,
                 adapter=self.adapter,
                 output_callback=internal_output_callback
             )
@@ -72,14 +99,18 @@ class OpenCodeWorker(BaseWorker):
                 self.logger.error(f"Failed to start process handler for worker {self.worker_id}")
                 return False
 
-            # OpenCode 使用 stdout，不需要文件监视器
-
-            self.logger.info(f"OpenCode worker {self.worker_id} started successfully")
+            self.logger.info(f"Process started for worker {self.worker_id} at {project_path}")
             return True
 
         except Exception as e:
-            self.logger.error(f"Failed to start OpenCode worker {self.worker_id}: {e}")
+            self.logger.error(f"Failed to start process for worker {self.worker_id}: {e}")
             return False
+
+    async def _stop_process(self) -> None:
+        """停止当前进程"""
+        if self.process_handler:
+            await self.process_handler.stop()
+            self.process_handler = None
 
     async def stop(self) -> None:
         """停止 worker"""
@@ -107,24 +138,30 @@ class OpenCodeWorker(BaseWorker):
 
         Args:
             message: 要发送的消息
-            conversation_id: 可选的对话 ID，如果提供则先切换到该对话
+            conversation_id: 对话 ID（必须提供，用于确定项目路径）
 
         Returns:
             True if message was sent successfully, False otherwise
         """
         try:
-            # 如果指定了 conversation_id，先切换
-            if conversation_id:
-                current = self._conversation_manager.get_current_conversation()
-                if current != conversation_id:
-                    await self._conversation_manager.switch_conversation(conversation_id)
-                    self.logger.info(f"Switched to conversation {conversation_id}")
+            if not conversation_id:
+                # 使用当前对话
+                conversation_id = self._conversation_manager.get_current_conversation()
+                if not conversation_id:
+                    self.logger.error(f"No active conversation for worker {self.worker_id}")
+                    return False
 
-            # 通过 ProcessHandler 发送消息
-            if not self.process_handler:
-                self.logger.error(f"Process handler not available for worker {self.worker_id}")
+            # 切换对话（如果需要）
+            current = self._conversation_manager.get_current_conversation()
+            if current != conversation_id:
+                await self._conversation_manager.switch_conversation(conversation_id)
+                self.logger.info(f"Switched to conversation {conversation_id}")
+
+            # 确保进程已经启动（根据对话的 project_path）
+            if not await self._ensure_process_for_conversation(conversation_id):
                 return False
 
+            # 通过 ProcessHandler 发送消息
             success = await self.process_handler.send_message(message)
 
             if success:
@@ -140,12 +177,19 @@ class OpenCodeWorker(BaseWorker):
 
     async def get_status(self) -> Dict[str, Any]:
         """获取 worker 状态"""
+        current_conv_id = self._conversation_manager.get_current_conversation()
+        current_project_path = None
+        if current_conv_id:
+            conv = await self._conversation_manager.get_conversation(current_conv_id)
+            if conv:
+                current_project_path = conv.project_path
+
         status = {
             "worker_id": self.worker_id,
             "type": "opencode",
-            "project_path": self.project_path,
+            "current_project_path": current_project_path,
             "is_running": self.is_running(),
-            "current_conversation": self._conversation_manager.get_current_conversation()
+            "current_conversation": current_conv_id
         }
 
         # 添加进程状态

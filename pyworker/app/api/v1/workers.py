@@ -50,7 +50,6 @@ async def list_workers(manager: WorkerManager = Depends(get_worker_manager)):
         WorkerResponse(
             id=worker.id,
             name=worker.name,
-            project_path=worker.project_path,
             ai_cli_type=worker.ai_cli_type,
             status=worker.status,
             created_at=worker.created_at,
@@ -85,7 +84,6 @@ async def create_worker(
         return WorkerResponse(
             id=worker.id,
             name=worker.name,
-            project_path=worker.project_path,
             ai_cli_type=worker.ai_cli_type,
             status=worker.status,
             created_at=worker.created_at,
@@ -126,7 +124,6 @@ async def get_worker(
     return WorkerDetailResponse(
         id=worker.id,
         name=worker.name,
-        project_path=worker.project_path,
         ai_cli_type=worker.ai_cli_type,
         status=worker.status,
         created_at=worker.created_at,
@@ -207,7 +204,7 @@ async def list_conversations(
 @router.post("/workers/{worker_id}/conversations", response_model=dict, status_code=201)
 async def create_conversation(
     worker_id: str,
-    request: Optional[CreateConversationRequest] = None,
+    request: CreateConversationRequest,
     manager: WorkerManager = Depends(get_worker_manager)
 ):
     """
@@ -215,7 +212,7 @@ async def create_conversation(
 
     Args:
         worker_id: Worker ID
-        request: Optional conversation creation request
+        request: Conversation creation request with project_path
 
     Returns:
         Conversation ID
@@ -224,8 +221,11 @@ async def create_conversation(
         HTTPException: If worker not found or creation fails
     """
     try:
-        name = request.name if request else None
-        conversation_id = await manager.new_conversation(worker_id, name)
+        conversation_id = await manager.new_conversation(
+            worker_id,
+            project_path=request.project_path,
+            name=request.name
+        )
 
         return {
             "conversation_id": conversation_id,

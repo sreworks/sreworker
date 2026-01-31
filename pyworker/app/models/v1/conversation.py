@@ -10,6 +10,7 @@ class ConversationResponse(BaseModel):
 
     id: str = Field(..., description="Conversation ID")
     name: str = Field(..., description="Conversation name")
+    project_path: str = Field(..., description="Project path for this conversation")
     created_at: str = Field(..., description="Creation timestamp (ISO format)")
     last_activity: str = Field(..., description="Last activity timestamp (ISO format)")
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Additional metadata")
@@ -20,6 +21,7 @@ class ConversationResponse(BaseModel):
             "example": {
                 "id": "123e4567-e89b-12d3-a456-426614174000",
                 "name": "My Conversation",
+                "project_path": "/home/user/my-project",
                 "created_at": "2024-01-30T12:00:00",
                 "last_activity": "2024-01-30T13:30:00",
                 "metadata": {}
@@ -30,12 +32,14 @@ class ConversationResponse(BaseModel):
 class CreateConversationRequest(BaseModel):
     """Request model for creating a conversation"""
 
+    project_path: str = Field(..., description="Project path for this conversation", min_length=1)
     name: Optional[str] = Field(None, description="Conversation name", max_length=200)
 
     class Config:
         """Pydantic configuration"""
         schema_extra = {
             "example": {
+                "project_path": "/home/user/my-project",
                 "name": "New Conversation"
             }
         }
@@ -83,6 +87,7 @@ class ConversationListResponse(BaseModel):
                     {
                         "id": "123e4567-e89b-12d3-a456-426614174000",
                         "name": "My Conversation",
+                        "project_path": "/home/user/my-project",
                         "created_at": "2024-01-30T12:00:00",
                         "last_activity": "2024-01-30T13:30:00",
                         "metadata": {}

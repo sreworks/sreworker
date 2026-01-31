@@ -67,7 +67,6 @@ class WorkerRegistry:
         self,
         name: str,
         worker_id: str,
-        project_path: str,
         config: Dict[str, Any],
         output_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
         db: Optional['DatabaseManager'] = None
@@ -78,7 +77,6 @@ class WorkerRegistry:
         Args:
             name: Worker 类型名称
             worker_id: Worker ID
-            project_path: 项目路径
             config: Worker 配置
             output_callback: 输出回调函数
             db: 数据库管理器（可选）
@@ -102,7 +100,6 @@ class WorkerRegistry:
         # 创建 worker 实例
         worker = worker_class(
             worker_id=worker_id,
-            project_path=project_path,
             config=config,
             output_callback=output_callback,
             db=db

@@ -78,7 +78,6 @@ class WorkerManager:
             worker = worker_registry.create_worker(
                 name=request.ai_cli_type,
                 worker_id=worker_id,
-                project_path=os.path.abspath(request.project_path),
                 config=request.config or {},
                 output_callback=output_callback,
                 db=self.db
@@ -93,7 +92,6 @@ class WorkerManager:
             worker_model = WorkerModel(
                 id=worker_id,
                 name=request.name,
-                project_path=worker.project_path,
                 ai_cli_type=request.ai_cli_type,
                 status=WorkerStatus.RUNNING,
                 config=worker.config,
@@ -111,7 +109,6 @@ class WorkerManager:
                 worker_data = {
                     'id': worker_model.id,
                     'name': worker_model.name,
-                    'project_path': worker_model.project_path,
                     'ai_cli_type': worker_model.ai_cli_type,
                     'status': worker_model.status.value,
                     'config': worker_model.config,
@@ -271,11 +268,11 @@ class WorkerManager:
 
     # === Conversation 相关方法 ===
 
-    async def new_conversation(self, worker_id: str, name: Optional[str] = None) -> str:
+    async def new_conversation(self, worker_id: str, project_path: str, name: Optional[str] = None) -> str:
         """创建新对话"""
         worker = self._get_worker_instance(worker_id)
         conversation_manager = worker.get_conversation_manager()
-        return await conversation_manager.new_conversation(name)
+        return await conversation_manager.new_conversation(project_path, name)
 
     async def clone_conversation(self, worker_id: str, conversation_id: str, new_name: Optional[str] = None) -> str:
         """克隆对话"""

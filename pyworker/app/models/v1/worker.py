@@ -21,7 +21,6 @@ class WorkerModel(BaseModel):
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), description="Worker unique ID")
     name: str = Field(..., description="Worker name")
-    project_path: str = Field(..., description="Project path")
     ai_cli_type: str = Field(default="claude", description="AI CLI type (claude, opencode, etc.)")
     status: WorkerStatus = Field(default=WorkerStatus.CREATED, description="Worker status")
     config: Dict[str, Any] = Field(default_factory=dict, description="Worker configuration")
@@ -39,7 +38,6 @@ class CreateWorkerRequest(BaseModel):
     """Request model for creating a worker."""
 
     name: str = Field(..., description="Worker name", min_length=1, max_length=100)
-    project_path: str = Field(..., description="Project path", min_length=1)
     ai_cli_type: Optional[str] = Field(default="claude", description="AI CLI type")
     config: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Worker configuration")
 
@@ -49,7 +47,6 @@ class WorkerResponse(BaseModel):
 
     id: str
     name: str
-    project_path: str
     ai_cli_type: str
     status: WorkerStatus
     created_at: datetime
