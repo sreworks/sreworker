@@ -17,6 +17,7 @@ from ...models.v1.conversation import (
 from ...models.v1.ai_cli import AICLIListResponse
 from ...services.v1.worker_manager import WorkerManager
 from ...adapters.v1.registry import adapter_registry
+from ...workers import handlers, default as default_type
 from ...config import settings
 
 router = APIRouter(prefix="/api/v1", tags=["workers-v1"])
@@ -486,6 +487,20 @@ async def get_current_conversation(
 
 
 # === Other Endpoints ===
+
+@router.get("/workers/types", response_model=dict)
+async def list_worker_types():
+    """
+    List available worker types.
+
+    Returns:
+        Available types and default type
+    """
+    return {
+        "types": list(handlers.keys()),
+        "default": default_type
+    }
+
 
 @router.get("/ai-clis", response_model=AICLIListResponse)
 async def list_ai_clis():
