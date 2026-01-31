@@ -7,8 +7,7 @@ from fastapi import WebSocket
 import uuid
 
 from ...models.v1.worker import WorkerModel, CreateWorkerRequest
-from ...workers.v1.registry import worker_registry
-from ...workers.v1.base import BaseWorker
+from ...workers.v1 import handlers, BaseWorker
 from ...utils.logger import get_app_logger
 from .database import DatabaseManager
 
@@ -57,17 +56,17 @@ class WorkerManager:
         if len(self.workers) >= self.config.max_workers:
             raise ValueError(f"Maximum number of workers ({self.config.max_workers}) reached")
 
-        # Validate AI CLI type
-        if not worker_registry.is_registered(request.type):
-            available_types = ', '.join(worker_registry.list_registered_workers().keys())
+        # Validate type
+        worker_type = request.type.lower()
+        if worker_type not in handlers:
             raise ValueError(
-                f"Unknown AI CLI type: {request.type}. "
-                f"Available types: {available_types}"
+                f"Unknown worker type: {request.type}. "
+                f"Available: {list(handlers.keys())}"
             )
 
         worker_id = str(uuid.uuid4())
 
-        self.logger.info(f"Creating worker: {worker_id} with type: {request.type}")
+        self.logger.info(f"Creating worker: {worker_id} with type: {worker_type}")
 
         try:
             # 创建输出回调
@@ -80,9 +79,9 @@ class WorkerManager:
                 'command_params': request.command_params or []
             }
 
-            # 通过 registry 创建 worker
-            worker = worker_registry.create_worker(
-                name=request.type,
+            # 创建 worker 实例
+            WorkerClass = handlers[worker_type]
+            worker = WorkerClass(
                 worker_id=worker_id,
                 config=worker_config,
                 output_callback=output_callback,
