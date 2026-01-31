@@ -93,6 +93,20 @@ async def create_worker(
         raise HTTPException(status_code=500, detail=f"Failed to create worker: {str(e)}")
 
 
+@router.get("/workers/types", response_model=dict, tags=["Workers"])
+async def list_worker_types():
+    """
+    List available worker types.
+
+    Returns:
+        Available types and default type
+    """
+    return {
+        "types": list(handlers.keys()),
+        "default": default_type
+    }
+
+
 @router.get("/workers/{worker_id}", response_model=WorkerResponse, tags=["Workers"])
 async def get_worker(
     worker_id: str,
@@ -487,20 +501,6 @@ async def get_current_conversation(
 
 
 # === Other Endpoints ===
-
-@router.get("/workers/types", response_model=dict, tags=["Workers"])
-async def list_worker_types():
-    """
-    List available worker types.
-
-    Returns:
-        Available types and default type
-    """
-    return {
-        "types": list(handlers.keys()),
-        "default": default_type
-    }
-
 
 @router.get("/ai-clis", response_model=AICLIListResponse, tags=["System"])
 async def list_ai_clis():
