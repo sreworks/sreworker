@@ -6,7 +6,7 @@ from typing import Dict, Optional, List, Any, Set
 from fastapi import WebSocket
 import uuid
 
-from ...models.worker import WorkerModel, WorkerStatus, CreateWorkerRequest
+from ...models.v1.worker import WorkerModel, WorkerStatus, CreateWorkerRequest
 from ...workers.v1.registry import worker_registry
 from ...workers.v1.base import BaseWorker
 from ...utils.logger import get_app_logger
@@ -58,27 +58,33 @@ class WorkerManager:
             raise ValueError(f"Maximum number of workers ({self.config.max_workers}) reached")
 
         # Validate AI CLI type
-        if not worker_registry.is_registered(request.ai_cli_type):
+        if not worker_registry.is_registered(request.type):
             available_types = ', '.join(worker_registry.list_registered_workers().keys())
             raise ValueError(
-                f"Unknown AI CLI type: {request.ai_cli_type}. "
+                f"Unknown AI CLI type: {request.type}. "
                 f"Available types: {available_types}"
             )
 
         worker_id = str(uuid.uuid4())
 
-        self.logger.info(f"Creating worker: {worker_id} ({request.name}) with AI CLI: {request.ai_cli_type}")
+        self.logger.info(f"Creating worker: {worker_id} with type: {request.type}")
 
         try:
             # 创建输出回调
             def output_callback(data: Dict[str, Any]):
                 self._handle_worker_output(worker_id, data)
 
+            # 构建 worker config
+            worker_config = {
+                'env_vars': request.env_vars or {},
+                'command_params': request.command_params or []
+            }
+
             # 通过 registry 创建 worker
             worker = worker_registry.create_worker(
-                name=request.ai_cli_type,
+                name=request.type,
                 worker_id=worker_id,
-                config=request.config or {},
+                config=worker_config,
                 output_callback=output_callback,
                 db=self.db
             )
@@ -91,10 +97,10 @@ class WorkerManager:
             # 创建 worker model
             worker_model = WorkerModel(
                 id=worker_id,
-                name=request.name,
-                ai_cli_type=request.ai_cli_type,
+                type=request.type,
+                env_vars=request.env_vars or {},
+                command_params=request.command_params or [],
                 status=WorkerStatus.RUNNING,
-                config=worker.config,
                 last_activity=datetime.utcnow()
             )
 
@@ -108,10 +114,10 @@ class WorkerManager:
             if self.db:
                 worker_data = {
                     'id': worker_model.id,
-                    'name': worker_model.name,
-                    'ai_cli_type': worker_model.ai_cli_type,
+                    'type': worker_model.type,
+                    'env_vars': worker_model.env_vars,
+                    'command_params': worker_model.command_params,
                     'status': worker_model.status.value,
-                    'config': worker_model.config,
                     'created_at': worker_model.created_at,
                     'last_activity': worker_model.last_activity
                 }

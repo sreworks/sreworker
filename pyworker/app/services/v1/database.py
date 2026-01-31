@@ -42,18 +42,18 @@ class DatabaseManager:
     def _init_schema(self):
         """Initialize database schema"""
         try:
-            # Workers table (project_path removed - it belongs to conversation)
+            # Workers table
             self.conn.execute("""
                 CREATE TABLE IF NOT EXISTS workers (
                     id VARCHAR PRIMARY KEY,
-                    name VARCHAR NOT NULL,
-                    ai_cli_type VARCHAR NOT NULL,
+                    type VARCHAR NOT NULL,
+                    env_vars JSON,
+                    command_params JSON,
                     status VARCHAR NOT NULL,
-                    config JSON,
                     created_at TIMESTAMP NOT NULL,
                     last_activity TIMESTAMP,
                     INDEX idx_workers_status (status),
-                    INDEX idx_workers_ai_cli_type (ai_cli_type)
+                    INDEX idx_workers_type (type)
                 )
             """)
 
@@ -118,14 +118,14 @@ class DatabaseManager:
         """
         try:
             self.conn.execute("""
-                INSERT INTO workers (id, name, ai_cli_type, status, config, created_at, last_activity)
+                INSERT INTO workers (id, type, env_vars, command_params, status, created_at, last_activity)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             """, [
                 worker_data['id'],
-                worker_data['name'],
-                worker_data['ai_cli_type'],
+                worker_data['type'],
+                json.dumps(worker_data.get('env_vars', {})),
+                json.dumps(worker_data.get('command_params', [])),
                 worker_data['status'],
-                json.dumps(worker_data.get('config', {})),
                 worker_data['created_at'],
                 worker_data.get('last_activity')
             ])
@@ -147,7 +147,7 @@ class DatabaseManager:
         """
         try:
             result = self.conn.execute("""
-                SELECT id, name, ai_cli_type, status, config, created_at, last_activity
+                SELECT id, type, env_vars, command_params, status, created_at, last_activity
                 FROM workers
                 WHERE id = ?
             """, [worker_id]).fetchone()
@@ -155,10 +155,10 @@ class DatabaseManager:
             if result:
                 return {
                     'id': result[0],
-                    'name': result[1],
-                    'ai_cli_type': result[2],
-                    'status': result[3],
-                    'config': json.loads(result[4]) if result[4] else {},
+                    'type': result[1],
+                    'env_vars': json.loads(result[2]) if result[2] else {},
+                    'command_params': json.loads(result[3]) if result[3] else [],
+                    'status': result[4],
                     'created_at': result[5],
                     'last_activity': result[6]
                 }
@@ -176,7 +176,7 @@ class DatabaseManager:
         """
         try:
             results = self.conn.execute("""
-                SELECT id, name, ai_cli_type, status, config, created_at, last_activity
+                SELECT id, type, env_vars, command_params, status, created_at, last_activity
                 FROM workers
                 ORDER BY created_at DESC
             """).fetchall()
@@ -185,10 +185,10 @@ class DatabaseManager:
             for row in results:
                 workers.append({
                     'id': row[0],
-                    'name': row[1],
-                    'ai_cli_type': row[2],
-                    'status': row[3],
-                    'config': json.loads(row[4]) if row[4] else {},
+                    'type': row[1],
+                    'env_vars': json.loads(row[2]) if row[2] else {},
+                    'command_params': json.loads(row[3]) if row[3] else [],
+                    'status': row[4],
                     'created_at': row[5],
                     'last_activity': row[6]
                 })

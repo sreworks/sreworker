@@ -49,8 +49,9 @@ async def list_workers(manager: WorkerManager = Depends(get_worker_manager)):
     worker_responses = [
         WorkerResponse(
             id=worker.id,
-            name=worker.name,
-            ai_cli_type=worker.ai_cli_type,
+            type=worker.type,
+            env_vars=worker.env_vars,
+            command_params=worker.command_params,
             status=worker.status,
             created_at=worker.created_at,
             last_activity=worker.last_activity
@@ -83,8 +84,9 @@ async def create_worker(
 
         return WorkerResponse(
             id=worker.id,
-            name=worker.name,
-            ai_cli_type=worker.ai_cli_type,
+            type=worker.type,
+            env_vars=worker.env_vars,
+            command_params=worker.command_params,
             status=worker.status,
             created_at=worker.created_at,
             last_activity=worker.last_activity
@@ -123,12 +125,12 @@ async def get_worker(
 
     return WorkerDetailResponse(
         id=worker.id,
-        name=worker.name,
-        ai_cli_type=worker.ai_cli_type,
+        type=worker.type,
+        env_vars=worker.env_vars,
+        command_params=worker.command_params,
         status=worker.status,
         created_at=worker.created_at,
         last_activity=worker.last_activity,
-        config=worker.config,
         messages=messages
     )
 
