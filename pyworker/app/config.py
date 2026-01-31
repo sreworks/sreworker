@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     max_workers: int = Field(default=10, description="Maximum number of workers")
     worker_timeout: int = Field(default=300, description="Worker timeout in seconds")
 
+    # Database Configuration
+    database_path: str = Field(default="./data/worker_manager.db", description="DuckDB database file path")
+    enable_database: bool = Field(default=True, description="Enable database persistence")
+
     # Logging Configuration
     log_level: str = Field(default="INFO", description="Log level")
     log_file: str = Field(default="./logs/app.log", description="Log file path")

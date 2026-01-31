@@ -1,11 +1,14 @@
 """OpenCode Worker 实现"""
 
-from typing import Optional, Dict, Any, Callable
+from typing import Optional, Dict, Any, Callable, TYPE_CHECKING
 from .base import BaseWorker
 from ...services.v1.conversation_manager import OpenCodeConversationManager, BaseConversationManager
 from ...services.v1.process_handler import ProcessHandler
 from ...adapters.v1.opencode import OpenCodeAdapter
 from ...utils.logger import get_app_logger
+
+if TYPE_CHECKING:
+    from ...services.v1.database import DatabaseManager
 
 
 class OpenCodeWorker(BaseWorker):
@@ -16,7 +19,8 @@ class OpenCodeWorker(BaseWorker):
         worker_id: str,
         project_path: str,
         config: Dict[str, Any],
-        output_callback: Optional[Callable[[Dict[str, Any]], None]] = None
+        output_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
+        db: Optional['DatabaseManager'] = None
     ):
         """
         初始化 OpenCode Worker
@@ -26,6 +30,7 @@ class OpenCodeWorker(BaseWorker):
             project_path: 项目路径
             config: 配置信息
             output_callback: 输出回调函数
+            db: 数据库管理器（可选）
         """
         super().__init__(worker_id, project_path, config)
 
@@ -33,6 +38,7 @@ class OpenCodeWorker(BaseWorker):
         self.adapter = OpenCodeAdapter(config)
         self.process_handler: Optional[ProcessHandler] = None
         self.output_callback = output_callback
+        self.db = db
         self.logger = get_app_logger()
 
         # 初始化 conversation manager
@@ -42,7 +48,8 @@ class OpenCodeWorker(BaseWorker):
         """创建 OpenCode 特定的对话管理器"""
         return OpenCodeConversationManager(
             project_path=self.project_path,
-            worker_id=self.worker_id
+            worker_id=self.worker_id,
+            db=self.db
         )
 
     async def start(self) -> bool:

@@ -10,6 +10,7 @@ from ...models.worker import WorkerModel, WorkerStatus, CreateWorkerRequest
 from ...workers.v1.registry import worker_registry
 from ...workers.v1.base import BaseWorker
 from ...utils.logger import get_app_logger
+from .database import DatabaseManager
 
 
 class WorkerManager:
@@ -28,6 +29,16 @@ class WorkerManager:
         self.websocket_connections: Dict[str, Set[WebSocket]] = {}
         self.message_history: Dict[str, List[Dict[str, Any]]] = {}
         self.logger = get_app_logger()
+
+        # Initialize database
+        self.db: Optional[DatabaseManager] = None
+        if config.enable_database:
+            try:
+                self.db = DatabaseManager(config.database_path)
+                self.logger.info(f"Database enabled at {config.database_path}")
+            except Exception as e:
+                self.logger.error(f"Failed to initialize database: {e}")
+                self.logger.warning("Running without database persistence")
 
     async def create_worker(self, request: CreateWorkerRequest) -> WorkerModel:
         """
@@ -69,7 +80,8 @@ class WorkerManager:
                 worker_id=worker_id,
                 project_path=os.path.abspath(request.project_path),
                 config=request.config or {},
-                output_callback=output_callback
+                output_callback=output_callback,
+                db=self.db
             )
 
             # 启动 worker
@@ -88,11 +100,25 @@ class WorkerManager:
                 last_activity=datetime.utcnow()
             )
 
-            # 存储
+            # 存储到内存
             self.workers[worker_id] = worker
             self.worker_models[worker_id] = worker_model
             self.message_history[worker_id] = []
             self.websocket_connections[worker_id] = set()
+
+            # 保存到数据库
+            if self.db:
+                worker_data = {
+                    'id': worker_model.id,
+                    'name': worker_model.name,
+                    'project_path': worker_model.project_path,
+                    'ai_cli_type': worker_model.ai_cli_type,
+                    'status': worker_model.status.value,
+                    'config': worker_model.config,
+                    'created_at': worker_model.created_at,
+                    'last_activity': worker_model.last_activity
+                }
+                self.db.create_worker(worker_data)
 
             self.logger.info(f"Worker created successfully: {worker_id}")
 
@@ -140,7 +166,11 @@ class WorkerManager:
                         pass
                 del self.websocket_connections[worker_id]
 
-            # Remove worker data
+            # Remove from database
+            if self.db:
+                self.db.delete_worker(worker_id)
+
+            # Remove worker data from memory
             del self.workers[worker_id]
             del self.worker_models[worker_id]
             if worker_id in self.message_history:
@@ -207,17 +237,35 @@ class WorkerManager:
         success = await worker.send_message(message, conversation_id)
 
         if success:
+            timestamp = datetime.utcnow()
+
             # Update last activity
             if worker_id in self.worker_models:
-                self.worker_models[worker_id].last_activity = datetime.utcnow()
+                self.worker_models[worker_id].last_activity = timestamp
 
-            # Store message in history
-            self.message_history[worker_id].append({
+                # Update in database
+                if self.db:
+                    self.db.update_worker_status(worker_id, WorkerStatus.RUNNING.value, timestamp)
+
+            # Store message in history (memory)
+            message_data = {
                 "type": "user",
                 "content": message,
                 "conversation_id": conversation_id,
-                "timestamp": datetime.utcnow().isoformat()
-            })
+                "timestamp": timestamp.isoformat()
+            }
+            self.message_history[worker_id].append(message_data)
+
+            # Save to database
+            if self.db and conversation_id:
+                self.db.add_message({
+                    'conversation_id': conversation_id,
+                    'worker_id': worker_id,
+                    'role': 'user',
+                    'content': message,
+                    'timestamp': timestamp,
+                    'metadata': {}
+                })
 
         return success
 

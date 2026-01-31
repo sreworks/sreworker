@@ -1,10 +1,13 @@
 """Worker Registry - Worker 类注册和创建"""
 
-from typing import Dict, Type, Any, Optional, Callable
+from typing import Dict, Type, Any, Optional, Callable, TYPE_CHECKING
 from .base import BaseWorker
 from .claude import ClaudeCodeWorker
 from .opencode import OpenCodeWorker
 from ...utils.logger import get_app_logger
+
+if TYPE_CHECKING:
+    from ...services.v1.database import DatabaseManager
 
 
 class WorkerRegistry:
@@ -66,7 +69,8 @@ class WorkerRegistry:
         worker_id: str,
         project_path: str,
         config: Dict[str, Any],
-        output_callback: Optional[Callable[[Dict[str, Any]], None]] = None
+        output_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
+        db: Optional['DatabaseManager'] = None
     ) -> BaseWorker:
         """
         创建 worker 实例
@@ -77,6 +81,7 @@ class WorkerRegistry:
             project_path: 项目路径
             config: Worker 配置
             output_callback: 输出回调函数
+            db: 数据库管理器（可选）
 
         Returns:
             Worker 实例
@@ -99,7 +104,8 @@ class WorkerRegistry:
             worker_id=worker_id,
             project_path=project_path,
             config=config,
-            output_callback=output_callback
+            output_callback=output_callback,
+            db=db
         )
 
         self.logger.info(f"Created worker instance: {worker_id} (type: {name_lower})")

@@ -1,7 +1,7 @@
 """对话管理服务 - 独立的 conversation 管理逻辑"""
 
 from abc import ABC, abstractmethod
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, TYPE_CHECKING
 from datetime import datetime
 import json
 import os
@@ -9,6 +9,9 @@ from pathlib import Path
 import uuid
 import shutil
 from ...utils.logger import get_app_logger
+
+if TYPE_CHECKING:
+    from .database import DatabaseManager
 
 
 class ConversationModel:
@@ -90,16 +93,18 @@ class BaseConversationManager(ABC):
 class ClaudeConversationManager(BaseConversationManager):
     """Claude Code 的对话管理器实现"""
 
-    def __init__(self, project_path: str, worker_id: str):
+    def __init__(self, project_path: str, worker_id: str, db: Optional['DatabaseManager'] = None):
         """
         初始化 Claude 对话管理器
 
         Args:
             project_path: 项目路径
             worker_id: worker ID（用于隔离）
+            db: 数据库管理器（可选）
         """
         self.project_path = project_path
         self.worker_id = worker_id
+        self.db = db
         self.claude_dir = Path(project_path) / ".claude"
         self.sessions_dir = self.claude_dir / "sessions"
         self.current_conversation_id: Optional[str] = None
@@ -108,6 +113,10 @@ class ClaudeConversationManager(BaseConversationManager):
 
         # 确保目录存在
         self.sessions_dir.mkdir(parents=True, exist_ok=True)
+
+        # 从数据库加载当前对话
+        if self.db:
+            self.current_conversation_id = self.db.get_current_conversation(worker_id)
 
     async def new_conversation(self, name: Optional[str] = None) -> str:
         """
@@ -138,6 +147,18 @@ class ClaudeConversationManager(BaseConversationManager):
 
         # 缓存
         self.conversations_cache[conversation_id] = conversation
+
+        # 保存到数据库
+        if self.db:
+            self.db.create_conversation({
+                'id': conversation_id,
+                'worker_id': self.worker_id,
+                'name': conversation.name,
+                'created_at': conversation.created_at,
+                'last_activity': conversation.last_activity,
+                'is_current': False,  # 切换时会设置为 True
+                'metadata': conversation.metadata
+            })
 
         # 切换到新对话
         await self.switch_conversation(conversation_id)
@@ -192,6 +213,18 @@ class ClaudeConversationManager(BaseConversationManager):
             metadata=metadata.get('metadata', {})
         )
         self.conversations_cache[new_id] = conversation
+
+        # 保存到数据库
+        if self.db:
+            self.db.create_conversation({
+                'id': new_id,
+                'worker_id': self.worker_id,
+                'name': conversation.name,
+                'created_at': conversation.created_at,
+                'last_activity': conversation.last_activity,
+                'is_current': False,
+                'metadata': {'cloned_from': conversation_id, **conversation.metadata}
+            })
 
         self.logger.info(f"Cloned conversation {conversation_id} to {new_id}")
 
@@ -291,6 +324,10 @@ class ClaudeConversationManager(BaseConversationManager):
         if conversation_id in self.conversations_cache:
             del self.conversations_cache[conversation_id]
 
+        # 从数据库删除
+        if self.db:
+            self.db.delete_conversation(conversation_id)
+
         self.logger.info(f"Deleted conversation: {conversation_id}")
 
         return True
@@ -309,6 +346,10 @@ class ClaudeConversationManager(BaseConversationManager):
             conversation.last_activity = datetime.utcnow()
             await self._save_conversation_metadata(conversation)
 
+        # 更新数据库中的当前对话
+        if self.db:
+            self.db.switch_conversation(self.worker_id, conversation_id)
+
         self.logger.info(f"Switched to conversation: {conversation_id}")
 
         return True
@@ -325,6 +366,10 @@ class ClaudeConversationManager(BaseConversationManager):
 
         conversation.name = new_name
         await self._save_conversation_metadata(conversation)
+
+        # 更新数据库
+        if self.db:
+            self.db.update_conversation(conversation_id, {'name': new_name})
 
         self.logger.info(f"Renamed conversation {conversation_id} to '{new_name}'")
 
@@ -361,9 +406,10 @@ class ClaudeConversationManager(BaseConversationManager):
 class OpenCodeConversationManager(BaseConversationManager):
     """OpenCode 的对话管理器实现"""
 
-    def __init__(self, project_path: str, worker_id: str):
+    def __init__(self, project_path: str, worker_id: str, db: Optional['DatabaseManager'] = None):
         self.project_path = project_path
         self.worker_id = worker_id
+        self.db = db
         # OpenCode 可能有不同的存储方式
         self.config_dir = Path(project_path) / ".opencode"
         self.current_conversation_id: Optional[str] = None
@@ -372,6 +418,10 @@ class OpenCodeConversationManager(BaseConversationManager):
 
         # 确保目录存在
         self.config_dir.mkdir(parents=True, exist_ok=True)
+
+        # 从数据库加载当前对话
+        if self.db:
+            self.current_conversation_id = self.db.get_current_conversation(worker_id)
 
     async def new_conversation(self, name: Optional[str] = None) -> str:
         """OpenCode 特定实现 - 目前简化实现"""
@@ -384,6 +434,18 @@ class OpenCodeConversationManager(BaseConversationManager):
 
         self.conversations_cache[conversation_id] = conversation
         self.current_conversation_id = conversation_id
+
+        # 保存到数据库
+        if self.db:
+            self.db.create_conversation({
+                'id': conversation_id,
+                'worker_id': self.worker_id,
+                'name': conversation.name,
+                'created_at': conversation.created_at,
+                'last_activity': conversation.last_activity,
+                'is_current': True,
+                'metadata': conversation.metadata
+            })
 
         self.logger.info(f"Created new OpenCode conversation: {conversation_id}")
 
@@ -403,6 +465,18 @@ class OpenCodeConversationManager(BaseConversationManager):
         )
 
         self.conversations_cache[new_id] = cloned
+
+        # 保存到数据库
+        if self.db:
+            self.db.create_conversation({
+                'id': new_id,
+                'worker_id': self.worker_id,
+                'name': cloned.name,
+                'created_at': cloned.created_at,
+                'last_activity': cloned.last_activity,
+                'is_current': False,
+                'metadata': {'cloned_from': conversation_id, **cloned.metadata}
+            })
 
         self.logger.info(f"Cloned OpenCode conversation {conversation_id} to {new_id}")
 
@@ -428,6 +502,10 @@ class OpenCodeConversationManager(BaseConversationManager):
 
         del self.conversations_cache[conversation_id]
 
+        # 从数据库删除
+        if self.db:
+            self.db.delete_conversation(conversation_id)
+
         self.logger.info(f"Deleted OpenCode conversation: {conversation_id}")
 
         return True
@@ -441,6 +519,10 @@ class OpenCodeConversationManager(BaseConversationManager):
 
         conversation = self.conversations_cache[conversation_id]
         conversation.last_activity = datetime.utcnow()
+
+        # 更新数据库中的当前对话
+        if self.db:
+            self.db.switch_conversation(self.worker_id, conversation_id)
 
         self.logger.info(f"Switched to OpenCode conversation: {conversation_id}")
 
@@ -457,6 +539,10 @@ class OpenCodeConversationManager(BaseConversationManager):
             return False
 
         conversation.name = new_name
+
+        # 更新数据库
+        if self.db:
+            self.db.update_conversation(conversation_id, {'name': new_name})
 
         self.logger.info(f"Renamed OpenCode conversation {conversation_id} to '{new_name}'")
 

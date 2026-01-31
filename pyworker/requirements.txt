@@ -6,3 +6,4 @@ pydantic==2.5.3
 pydantic-settings==2.1.0
 python-dotenv==1.0.0
 aiofiles==23.2.1
+duckdb==0.10.0
