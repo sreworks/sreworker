@@ -7,7 +7,8 @@ from fastapi import WebSocket
 import uuid
 
 from ...models.v1.worker import WorkerModel, CreateWorkerRequest
-from ...workers.v1 import handlers, BaseWorker
+from ...workers import handlers
+from ...workers.v1 import BaseWorker
 from ...utils.logger import get_app_logger
 from .database import DatabaseManager
 

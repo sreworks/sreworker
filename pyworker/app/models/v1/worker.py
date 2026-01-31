@@ -5,7 +5,7 @@ from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, Field, validator
 import uuid
 
-from ...workers.v1 import handlers, default as default_type
+from ...workers import handlers, default as default_type
 
 
 class WorkerModel(BaseModel):
