@@ -8,10 +8,11 @@ from contextlib import asynccontextmanager
 import os
 
 from .config import settings
-from .services.worker_manager import WorkerManager
-from .adapters.registry import register_default_adapters
+from .services.v1.worker_manager import WorkerManager
+from .adapters.v1.registry import register_default_adapters
 from .utils.logger import init_app_logger
-from .api import workers, websocket
+from .api.v1 import workers
+from .api import websocket
 
 
 # Initialize logger
