@@ -94,9 +94,12 @@ async def create_conversation(
     """Create a new conversation."""
     from pathlib import Path
 
-    # 检查 project_path 是否存在
-    if not Path(request.project_path).exists():
+    # 检查 project_path 是否存在且为目录
+    p = Path(request.project_path)
+    if not p.exists():
         raise HTTPException(status_code=400, detail=f"project_path does not exist: {request.project_path}")
+    if not p.is_dir():
+        raise HTTPException(status_code=400, detail=f"project_path is not a directory: {request.project_path}")
 
     worker = worker_repo.get(request.worker_name)
     if not worker:

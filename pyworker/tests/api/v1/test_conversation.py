@@ -86,6 +86,20 @@ class TestConversationCRUD:
         assert response.status_code == 400
         assert "project_path does not exist" in response.json()["detail"]
 
+    async def test_create_conversation_path_is_file(self, client: AsyncClient):
+        """Test creating conversation with a file path (not directory) fails."""
+        worker_name = await self._create_worker(client)
+
+        response = await client.post(
+            "/api/v1/conversations",
+            json={
+                "worker_name": worker_name,
+                "project_path": "/etc/hostname"
+            }
+        )
+        assert response.status_code == 400
+        assert "not a directory" in response.json()["detail"]
+
     async def test_get_conversation(self, client: AsyncClient):
         """Test getting a conversation by ID."""
         worker_name = await self._create_worker(client)

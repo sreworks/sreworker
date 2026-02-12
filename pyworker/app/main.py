@@ -2,6 +2,8 @@
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 from .db import DatabaseConnection
 from .api.v1 import workers, conversations
@@ -36,6 +38,14 @@ app = FastAPI(
 # Include routers
 app.include_router(workers.router)
 app.include_router(conversations.router)
+
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+@app.get("/", include_in_schema=False)
+async def root():
+    return FileResponse("static/index.html")
 
 
 @app.get("/health", tags=["System"])

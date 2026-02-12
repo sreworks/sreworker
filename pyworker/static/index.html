@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PyWorker2</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace; background: #1a1a2e; color: #e0e0e0; height: 100vh; display: flex; flex-direction: column; }
+header { background: #16213e; padding: 12px 20px; border-bottom: 1px solid #2a2a4a; display: flex; align-items: center; gap: 12px; }
+header h1 { font-size: 16px; color: #a0c4ff; }
+header span { font-size: 12px; color: #666; }
+.container { display: flex; flex: 1; overflow: hidden; }
+
+/* Panels */
+.panel { display: flex; flex-direction: column; border-right: 1px solid #2a2a4a; }
+.panel-header { padding: 12px 16px; background: #16213e; border-bottom: 1px solid #2a2a4a; font-size: 13px; font-weight: 600; color: #a0c4ff; }
+.panel-body { flex: 1; overflow-y: auto; padding: 8px; }
+.panel-footer { padding: 8px; border-top: 1px solid #2a2a4a; background: #16213e; }
+
+#workers-panel { width: 220px; min-width: 220px; }
+#conversations-panel { width: 260px; min-width: 260px; }
+#chat-panel { flex: 1; display: flex; flex-direction: column; border-right: none; }
+
+/* List items */
+.list-item { padding: 8px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px; }
+.list-item:hover { background: #2a2a4a; }
+.list-item.active { background: #2a3a5a; color: #a0c4ff; }
+.list-item .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.list-item .badge { font-size: 10px; color: #888; margin-left: 8px; }
+.list-item .del-btn { opacity: 0; color: #f44; font-size: 14px; cursor: pointer; margin-left: 4px; background: none; border: none; padding: 0 4px; }
+.list-item:hover .del-btn { opacity: 0.6; }
+.list-item .del-btn:hover { opacity: 1; }
+
+/* Forms */
+.form-row { display: flex; gap: 6px; margin-bottom: 6px; }
+.form-row:last-child { margin-bottom: 0; }
+input, select { background: #2a2a4a; border: 1px solid #3a3a5a; color: #e0e0e0; padding: 6px 10px; border-radius: 4px; font-size: 12px; outline: none; flex: 1; min-width: 0; }
+input:focus, select:focus { border-color: #a0c4ff; }
+input::placeholder { color: #666; }
+button { background: #2a3a5a; color: #a0c4ff; border: 1px solid #3a4a6a; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; white-space: nowrap; }
+button:hover { background: #3a4a6a; }
+button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Chat area */
+#chat-messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column-reverse; gap: 12px; }
+.msg { max-width: 80%; padding: 10px 14px; border-radius: 10px; font-size: 13px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+.msg.user { align-self: flex-end; background: #2a3a5a; color: #c0d8ff; border-bottom-right-radius: 2px; }
+.msg.assistant { align-self: flex-start; background: #2a2a3a; color: #d0d0e0; border-bottom-left-radius: 2px; }
+.msg .msg-meta { font-size: 10px; color: #666; margin-top: 4px; }
+.empty-state { flex: 1; display: flex; align-items: center; justify-content: center; color: #555; font-size: 14px; }
+
+/* Chat input */
+#chat-input-area { padding: 12px 16px; border-top: 1px solid #2a2a4a; background: #16213e; display: flex; gap: 8px; }
+#chat-input-area textarea { flex: 1; background: #2a2a4a; border: 1px solid #3a3a5a; color: #e0e0e0; padding: 8px 12px; border-radius: 6px; font-size: 13px; font-family: inherit; resize: none; outline: none; min-height: 40px; max-height: 120px; }
+#chat-input-area textarea:focus { border-color: #a0c4ff; }
+#chat-input-area button { align-self: flex-end; padding: 8px 20px; }
+
+/* Status */
+.status { font-size: 11px; color: #888; padding: 4px 8px; text-align: center; }
+.status.syncing { color: #f0c040; }
+.status.error { color: #f44; }
+
+/* Info icon */
+.info-icon { font-size: 11px; color: #666; cursor: default; position: relative; margin-right: 4px; }
+.info-icon:hover { color: #a0c4ff; }
+.info-icon:hover::after { content: attr(title); position: absolute; right: 0; top: 120%; background: #2a2a4a; color: #ccc; padding: 4px 8px; border-radius: 4px; font-size: 11px; white-space: nowrap; z-index: 10; border: 1px solid #3a3a5a; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #3a3a5a; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #4a4a6a; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>PyWorker2</h1>
+  <span id="health-status">connecting...</span>
+</header>
+
+<div class="container">
+  <!-- Workers Panel -->
+  <div class="panel" id="workers-panel">
+    <div class="panel-header">Workers</div>
+    <div class="panel-body" id="worker-list"></div>
+    <div class="panel-footer">
+      <div class="form-row">
+        <input id="worker-name" placeholder="worker name" />
+      </div>
+      <div class="form-row">
+        <select id="worker-type"></select>
+      </div>
+      <div class="form-row">
+        <input id="worker-env-vars" placeholder='env_vars: K=V,K2=V2' />
+      </div>
+      <div class="form-row">
+        <input id="worker-cmd-params" placeholder='params: --flag1,--flag2' />
+      </div>
+      <div class="form-row">
+        <button onclick="createWorker()" style="flex:1">Create Worker</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Conversations Panel -->
+  <div class="panel" id="conversations-panel">
+    <div class="panel-header">Conversations <span id="conv-worker-label" style="font-weight:normal;color:#666"></span></div>
+    <div class="panel-body" id="conversation-list">
+      <div class="empty-state">select a worker</div>
+    </div>
+    <div class="panel-footer">
+      <div class="form-row">
+        <input id="conv-project-path" placeholder="project path" />
+        <button onclick="createConversation()" id="btn-create-conv" disabled>+</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Chat Panel -->
+  <div class="panel" id="chat-panel">
+    <div class="panel-header">
+      Chat <span id="chat-conv-label" style="font-weight:normal;color:#666"></span>
+      <span id="chat-status" class="status" style="float:right"></span>
+      <span id="chat-conv-info" class="info-icon" style="float:right;display:none" title="">(i)</span>
+    </div>
+    <div id="chat-messages">
+      <div class="empty-state">select a conversation</div>
+    </div>
+    <div id="chat-input-area" style="display:none">
+      <textarea id="chat-input" placeholder="Type a message... (Enter to send, Shift+Enter for newline)" rows="1"></textarea>
+      <button onclick="sendMessage()" id="btn-send">Send</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '/api/v1';
+let state = {
+  selectedWorker: null,
+  selectedConversation: null,
+  pollTimer: null,
+  sending: false
+};
+
+// --- API helpers ---
+async function api(method, path, body) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(API + path, opts);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || res.statusText);
+  }
+  return res.json();
+}
+
+// --- Health check ---
+async function checkHealth() {
+  try {
+    const data = await (await fetch('/health')).json();
+    document.getElementById('health-status').textContent = `v${data.version}`;
+  } catch {
+    document.getElementById('health-status').textContent = 'disconnected';
+  }
+}
+
+// --- Workers ---
+async function loadWorkers() {
+  try {
+    const data = await api('GET', '/workers');
+    const list = document.getElementById('worker-list');
+    if (data.workers.length === 0) {
+      list.innerHTML = '<div class="empty-state">no workers</div>';
+      return;
+    }
+    list.innerHTML = data.workers.map(w => `
+      <div class="list-item ${state.selectedWorker === w.name ? 'active' : ''}" onclick="selectWorker('${w.name}')">
+        <span class="name">${w.name}</span>
+        <span class="badge">${w.type}</span>
+        <button class="del-btn" onclick="event.stopPropagation();deleteWorker('${w.name}')">&times;</button>
+      </div>
+    `).join('');
+  } catch (e) {
+    console.error('loadWorkers:', e);
+  }
+}
+
+async function loadWorkerTypes() {
+  try {
+    const data = await api('GET', '/workers/types');
+    const sel = document.getElementById('worker-type');
+    sel.innerHTML = data.types.map(t =>
+      `<option value="${t}" ${t === data.default ? 'selected' : ''}>${t}</option>`
+    ).join('');
+  } catch (e) {
+    console.error('loadWorkerTypes:', e);
+  }
+}
+
+async function createWorker() {
+  const name = document.getElementById('worker-name').value.trim();
+  const type = document.getElementById('worker-type').value;
+  if (!name) return;
+
+  // Parse env_vars: "K=V,K2=V2" -> {K: "V", K2: "V2"}
+  const envStr = document.getElementById('worker-env-vars').value.trim();
+  const env_vars = {};
+  if (envStr) {
+    for (const pair of envStr.split(',')) {
+      const [k, ...rest] = pair.split('=');
+      if (k.trim()) env_vars[k.trim()] = rest.join('=').trim();
+    }
+  }
+
+  // Parse command_params: "--flag1,--flag2" -> ["--flag1", "--flag2"]
+  const paramsStr = document.getElementById('worker-cmd-params').value.trim();
+  const command_params = paramsStr ? paramsStr.split(',').map(s => s.trim()).filter(Boolean) : [];
+
+  try {
+    await api('POST', '/workers', { name, type, env_vars, command_params });
+    document.getElementById('worker-name').value = '';
+    document.getElementById('worker-env-vars').value = '';
+    document.getElementById('worker-cmd-params').value = '';
+    await loadWorkers();
+  } catch (e) {
+    alert('Failed: ' + e.message);
+  }
+}
+
+async function deleteWorker(name) {
+  if (!confirm(`Delete worker "${name}"?`)) return;
+  try {
+    await api('DELETE', `/workers/${name}`);
+    if (state.selectedWorker === name) {
+      state.selectedWorker = null;
+      state.selectedConversation = null;
+      stopPolling();
+      renderConversationList([]);
+      renderChatEmpty();
+    }
+    await loadWorkers();
+  } catch (e) {
+    alert('Failed: ' + e.message);
+  }
+}
+
+function selectWorker(name) {
+  state.selectedWorker = name;
+  state.selectedConversation = null;
+  stopPolling();
+  document.getElementById('btn-create-conv').disabled = false;
+  document.getElementById('conv-worker-label').textContent = `(${name})`;
+  loadWorkers();
+  loadConversations();
+  renderChatEmpty();
+}
+
+// --- Conversations ---
+async function loadConversations() {
+  if (!state.selectedWorker) return;
+  try {
+    const data = await api('GET', `/conversations?worker_name=${state.selectedWorker}`);
+    renderConversationList(data.conversations);
+  } catch (e) {
+    console.error('loadConversations:', e);
+  }
+}
+
+function renderConversationList(conversations) {
+  const list = document.getElementById('conversation-list');
+  if (!state.selectedWorker) {
+    list.innerHTML = '<div class="empty-state">select a worker</div>';
+    return;
+  }
+  if (conversations.length === 0) {
+    list.innerHTML = '<div class="empty-state">no conversations</div>';
+    return;
+  }
+  list.innerHTML = conversations.map(c => {
+    const label = c.name || c.id.slice(0, 8);
+    const time = new Date(c.last_activity).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+    return `
+      <div class="list-item ${state.selectedConversation === c.id ? 'active' : ''}" onclick="selectConversation('${c.id}')">
+        <span class="name" title="${c.project_path}">${label}</span>
+        <span class="badge">${time}</span>
+        <button class="del-btn" onclick="event.stopPropagation();deleteConversation('${c.id}')">&times;</button>
+      </div>
+    `;
+  }).join('');
+}
+
+async function createConversation() {
+  if (!state.selectedWorker) return;
+  const projectPath = document.getElementById('conv-project-path').value.trim();
+  if (!projectPath) return;
+  try {
+    const conv = await api('POST', '/conversations', {
+      worker_name: state.selectedWorker,
+      project_path: projectPath
+    });
+    document.getElementById('conv-project-path').value = '';
+    await loadConversations();
+    selectConversation(conv.id);
+  } catch (e) {
+    alert('Failed: ' + e.message);
+  }
+}
+
+async function deleteConversation(id) {
+  if (!confirm('Delete this conversation?')) return;
+  try {
+    await api('DELETE', `/conversations/${id}`);
+    if (state.selectedConversation === id) {
+      state.selectedConversation = null;
+      stopPolling();
+      renderChatEmpty();
+    }
+    await loadConversations();
+  } catch (e) {
+    alert('Failed: ' + e.message);
+  }
+}
+
+async function selectConversation(id) {
+  state.selectedConversation = id;
+  stopPolling();
+  document.getElementById('chat-input-area').style.display = 'flex';
+  // Fetch conversation details for project_path
+  try {
+    const conv = await api('GET', `/conversations/${id}`);
+    document.getElementById('chat-conv-label').textContent = `(${conv.project_path})`;
+    const infoEl = document.getElementById('chat-conv-info');
+    infoEl.title = id;
+    infoEl.style.display = 'inline';
+  } catch {
+    document.getElementById('chat-conv-label').textContent = '';
+  }
+  loadConversations();
+  loadChatMessages();
+}
+
+// --- Chat ---
+function renderChatEmpty() {
+  document.getElementById('chat-messages').innerHTML = '<div class="empty-state">select a conversation</div>';
+  document.getElementById('chat-input-area').style.display = 'none';
+  document.getElementById('chat-conv-label').textContent = '';
+  document.getElementById('chat-conv-info').style.display = 'none';
+  document.getElementById('chat-status').textContent = '';
+}
+
+async function loadChatMessages() {
+  if (!state.selectedConversation) return;
+  const container = document.getElementById('chat-messages');
+  try {
+    // Load inputs (user messages sent via our API)
+    const inputsData = await api('GET', `/conversations/${state.selectedConversation}/inputs?limit=200`);
+
+    // Try to load synced messages
+    let messagesData = { messages: [] };
+    try {
+      messagesData = await api('GET', `/conversations/${state.selectedConversation}/messages?limit=200`);
+    } catch { /* no messages yet */ }
+
+    renderMessages(inputsData.inputs, messagesData.messages);
+  } catch (e) {
+    container.innerHTML = `<div class="empty-state">Error: ${e.message}</div>`;
+  }
+}
+
+function renderMessages(inputs, syncedMessages) {
+  const container = document.getElementById('chat-messages');
+
+  // Build timeline: inputs are user messages, synced messages contain both user and assistant
+  // If we have synced messages, prefer those as they include assistant responses
+  let html = '';
+
+  if (syncedMessages.length > 0) {
+    // Use synced messages as primary source
+    for (const m of syncedMessages) {
+      const type = m.message_type;
+      if (type === 'user' || type === 'assistant') {
+        const content = extractContent(m);
+        if (content) {
+          html += `<div class="msg ${type}">${escapeHtml(content)}</div>`;
+        }
+      }
+    }
+  } else if (inputs.length > 0) {
+    // Fall back to inputs only
+    for (const inp of inputs) {
+      html += `<div class="msg ${inp.role}">${escapeHtml(inp.content)}</div>`;
+    }
+  }
+
+  if (!html) {
+    html = '<div class="empty-state">no messages yet</div>';
+  }
+
+  container.innerHTML = html;
+}
+
+function extractContent(msg) {
+  // msg.content is the raw message from the code tool
+  // Try common content locations
+  const c = msg.content;
+  if (typeof c === 'string') return c;
+  if (c.message && typeof c.message === 'string') return c.message;
+  if (c.content && typeof c.content === 'string') return c.content;
+  // For Claude Code messages, content might be in message.content
+  if (c.message && c.message.content) {
+    if (typeof c.message.content === 'string') return c.message.content;
+    if (Array.isArray(c.message.content)) {
+      return c.message.content
+        .filter(b => b.type === 'text')
+        .map(b => b.text)
+        .join('\n');
+    }
+  }
+  // For user type, try to find text
+  if (c.type === 'user' && Array.isArray(c.content)) {
+    return c.content.filter(b => b.type === 'text').map(b => b.text).join('\n');
+  }
+  return null;
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+async function sendMessage() {
+  if (state.sending || !state.selectedConversation) return;
+  const textarea = document.getElementById('chat-input');
+  const content = textarea.value.trim();
+  if (!content) return;
+
+  state.sending = true;
+  document.getElementById('btn-send').disabled = true;
+  setStatus('sending...', 'syncing');
+
+  // Optimistically show user message
+  const container = document.getElementById('chat-messages');
+  const emptyState = container.querySelector('.empty-state');
+  if (emptyState) emptyState.remove();
+  const msgEl = document.createElement('div');
+  msgEl.className = 'msg user';
+  msgEl.textContent = content;
+  container.prepend(msgEl);
+  textarea.value = '';
+  autoResize(textarea);
+
+  try {
+    await api('POST', `/conversations/${state.selectedConversation}`, {
+      role: 'user',
+      content: content
+    });
+    // Sync once after sending, then poll messages only
+    setStatus('syncing...', 'syncing');
+    await syncOnce();
+    startPolling();
+  } catch (e) {
+    setStatus('Error: ' + e.message, 'error');
+  } finally {
+    state.sending = false;
+    document.getElementById('btn-send').disabled = false;
+  }
+}
+
+async function syncOnce() {
+  if (!state.selectedConversation) return;
+  try {
+    await api('POST', `/conversations/${state.selectedConversation}/messages/sync`);
+    await loadChatMessages();
+    setStatus('synced', '');
+  } catch (e) {
+    setStatus('waiting...', 'syncing');
+  }
+}
+
+function startPolling() {
+  stopPolling();
+  state.pollTimer = setInterval(async () => {
+    if (state.selectedConversation) {
+      await loadChatMessages();
+    }
+  }, 10000);
+}
+
+function stopPolling() {
+  if (state.pollTimer) {
+    clearInterval(state.pollTimer);
+    state.pollTimer = null;
+  }
+  setStatus('', '');
+}
+
+function setStatus(text, cls) {
+  const el = document.getElementById('chat-status');
+  el.textContent = text;
+  el.className = 'status' + (cls ? ' ' + cls : '');
+}
+
+// --- Textarea auto-resize ---
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+}
+
+// --- Init ---
+document.getElementById('chat-input').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+});
+document.getElementById('chat-input').addEventListener('input', function() {
+  autoResize(this);
+});
+document.getElementById('worker-name').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') createWorker();
+});
+document.getElementById('conv-project-path').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') createConversation();
+});
+
+checkHealth();
+loadWorkerTypes();
+loadWorkers();
+</script>
+</body>
+</html>
