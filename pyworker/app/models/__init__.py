@@ -7,7 +7,14 @@ from .conversation import (
     CreateConversationRequest,
     CloneConversationRequest,
     RenameConversationRequest,
-    ConversationMessageResponse
+    CreateInputRequest,
+    ConversationInputResponse,
+    InputResponse
+)
+from .message import (
+    MessageResponse,
+    ConversationMessagesResponse,
+    SyncMessagesResponse
 )
 
 __all__ = [
@@ -18,5 +25,10 @@ __all__ = [
     "CreateConversationRequest",
     "CloneConversationRequest",
     "RenameConversationRequest",
-    "ConversationMessageResponse",
+    "CreateInputRequest",
+    "ConversationInputResponse",
+    "InputResponse",
+    "MessageResponse",
+    "ConversationMessagesResponse",
+    "SyncMessagesResponse",
 ]

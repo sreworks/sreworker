@@ -10,13 +10,19 @@ from ...models.conversation import (
     ConversationListResponse,
     CreateConversationRequest,
     RenameConversationRequest,
-    CreateMessageRequest,
-    ConversationMessageResponse,
-    MessageResponse
+    CreateInputRequest,
+    ConversationInputResponse,
+    InputResponse
 )
-from ...db import DatabaseConnection, ConversationRepository, WorkerRepository
+from ...models.message import (
+    MessageResponse,
+    ConversationMessagesResponse,
+    SyncMessagesResponse
+)
+from ...db import DatabaseConnection, ConversationRepository, WorkerRepository, MessageRepository
 from ...db.database_models import ConversationDO
 from ...services import ConversationManager
+from ...workers import handlers
 
 router = APIRouter(prefix="/api/v1/conversations", tags=["Conversations"])
 
@@ -45,6 +51,13 @@ def get_worker_repo() -> WorkerRepository:
     if db_conn is None:
         raise HTTPException(status_code=500, detail="Database not initialized")
     return WorkerRepository(db_conn.conn)
+
+
+def get_message_repo() -> MessageRepository:
+    """Dependency to get message repository."""
+    if db_conn is None:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+    return MessageRepository(db_conn.conn)
 
 
 def _to_response(conv: ConversationDO) -> ConversationResponse:
@@ -86,6 +99,12 @@ async def create_conversation(
     worker_repo: WorkerRepository = Depends(get_worker_repo)
 ):
     """Create a new conversation."""
+    from pathlib import Path
+
+    # 检查 project_path 是否存在
+    if not Path(request.project_path).exists():
+        raise HTTPException(status_code=400, detail=f"project_path does not exist: {request.project_path}")
+
     worker = worker_repo.get(request.worker_name)
     if not worker:
         raise HTTPException(status_code=404, detail=f"Worker not found: {request.worker_name}")
@@ -168,25 +187,25 @@ async def rename_conversation(
     }
 
 
-@router.get("/{conversation_id}/messages", response_model=ConversationMessageResponse)
-async def get_conversation_messages(
+@router.get("/{conversation_id}/inputs", response_model=ConversationInputResponse)
+async def get_conversation_inputs(
     conversation_id: str,
     limit: int = Query(100, ge=1, le=1000),
     conv_repo: ConversationRepository = Depends(get_conversation_repo),
     manager: ConversationManager = Depends(get_conv_manager)
 ):
-    """Get messages from a conversation."""
+    """Get inputs from a conversation."""
     conversation = conv_repo.get(conversation_id)
 
     if not conversation:
         raise HTTPException(status_code=404, detail=f"Conversation not found: {conversation_id}")
 
-    messages = manager.get_messages(conversation.worker_id, conversation_id, limit=limit)
+    inputs = manager.get_inputs(conversation.worker_id, conversation_id, limit=limit)
 
-    return ConversationMessageResponse(
+    return ConversationInputResponse(
         conversation_id=conversation_id,
-        messages=[
-            MessageResponse(
+        inputs=[
+            InputResponse(
                 id=None,
                 conversation_id=conversation_id,
                 worker_name=conversation.worker_id,
@@ -195,26 +214,67 @@ async def get_conversation_messages(
                 timestamp=datetime.fromisoformat(m["timestamp"]),
                 metadata=m.get("metadata", {})
             )
-            for m in messages
+            for m in inputs
         ],
-        total=len(messages)
+        total=len(inputs)
     )
 
 
-@router.post("/{conversation_id}/messages", response_model=MessageResponse, status_code=201)
-async def create_message(
+@router.post("/{conversation_id}", response_model=InputResponse, status_code=201)
+async def create_input(
     conversation_id: str,
-    request: CreateMessageRequest,
+    request: CreateInputRequest,
     conv_repo: ConversationRepository = Depends(get_conversation_repo),
+    worker_repo: WorkerRepository = Depends(get_worker_repo),
     manager: ConversationManager = Depends(get_conv_manager)
 ):
-    """Add a message to a conversation."""
+    """Add an input to a conversation."""
     conversation = conv_repo.get(conversation_id)
 
     if not conversation:
         raise HTTPException(status_code=404, detail=f"Conversation not found: {conversation_id}")
 
-    message = manager.add_message(
+    # Get worker record
+    worker_record = worker_repo.get(conversation.worker_id)
+    if not worker_record:
+        raise HTTPException(status_code=404, detail=f"Worker not found: {conversation.worker_id}")
+
+    # Get worker class from handlers registry
+    worker_class = handlers.get(worker_record.type)
+    if not worker_class:
+        raise HTTPException(status_code=400, detail=f"Unknown worker type: {worker_record.type}")
+
+    # Instantiate worker
+    worker_instance = worker_class(
+        env_vars=worker_record.env_vars,
+        command_params=worker_record.command_params
+    )
+
+    # Call worker based on whether we have a raw_conversation_id
+    if conversation.raw_conversation_id is None:
+        # First input - start new conversation
+        try:
+            raw_conversation_id = await worker_instance.start_conversation(
+                path=conversation.project_path,
+                message=request.content
+            )
+            # Save raw_conversation_id back to conversation
+            conv_repo.update(conversation_id, {"raw_conversation_id": raw_conversation_id})
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to start conversation: {str(e)}")
+    else:
+        # Continue existing conversation
+        try:
+            await worker_instance.continue_conversation(
+                raw_conversation_id=conversation.raw_conversation_id,
+                path=conversation.project_path,
+                message=request.content
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to continue conversation: {str(e)}")
+
+    # Save input to local storage
+    input_data = manager.add_input(
         worker_name=conversation.worker_id,
         conversation_id=conversation_id,
         role=request.role,
@@ -225,12 +285,145 @@ async def create_message(
     # Update last_activity
     conv_repo.update(conversation_id, {"last_activity": datetime.utcnow()})
 
-    return MessageResponse(
+    return InputResponse(
         id=None,
         conversation_id=conversation_id,
         worker_name=conversation.worker_id,
-        role=message["role"],
-        content=message["content"],
-        timestamp=datetime.fromisoformat(message["timestamp"]),
-        metadata=message.get("metadata", {})
+        role=input_data["role"],
+        content=input_data["content"],
+        timestamp=datetime.fromisoformat(input_data["timestamp"]),
+        metadata=input_data.get("metadata", {})
+    )
+
+
+@router.get("/{conversation_id}/messages", response_model=ConversationMessagesResponse)
+async def get_conversation_messages(
+    conversation_id: str,
+    limit: int = Query(100, ge=1, le=1000),
+    conv_repo: ConversationRepository = Depends(get_conversation_repo),
+    msg_repo: MessageRepository = Depends(get_message_repo)
+):
+    """Get messages from a conversation."""
+    conversation = conv_repo.get(conversation_id)
+
+    if not conversation:
+        raise HTTPException(status_code=404, detail=f"Conversation not found: {conversation_id}")
+
+    messages = msg_repo.get_by_conversation(conversation_id, limit=limit)
+
+    return ConversationMessagesResponse(
+        conversation_id=conversation_id,
+        messages=[
+            MessageResponse(
+                id=m.id,
+                message_type=m.message_type,
+                uuid=m.uuid,
+                content=m.content,
+                timestamp=m.timestamp
+            )
+            for m in messages
+        ],
+        total=len(messages)
+    )
+
+
+def _convert_raw_message_to_do(
+    raw_msg: dict,
+    conversation_id: str,
+    worker_id: str
+) -> "MessageDO":
+    """
+    Convert raw message from code tool to MessageDO.
+
+    Args:
+        raw_msg: Raw message dict from code tool
+        conversation_id: Local conversation ID
+        worker_id: Worker ID
+
+    Returns:
+        MessageDO instance
+    """
+    from ...db.database_models import MessageDO
+
+    msg_type = raw_msg.get("type", "unknown")
+
+    # Extract uuid - different message types may have it in different places
+    msg_uuid = raw_msg.get("uuid") or raw_msg.get("sessionId") or ""
+    if not msg_uuid:
+        # Generate a pseudo-uuid from type and timestamp if not available
+        msg_uuid = f"{msg_type}-{raw_msg.get('timestamp', '')}"
+
+    # Parse timestamp
+    timestamp_str = raw_msg.get("timestamp", "")
+    try:
+        timestamp = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        timestamp = datetime.utcnow()
+
+    return MessageDO(
+        conversation_id=conversation_id,
+        worker_id=worker_id,
+        message_type=msg_type,
+        uuid=msg_uuid,
+        content=raw_msg,  # Store the entire raw message as content
+        timestamp=timestamp
+    )
+
+
+@router.post("/{conversation_id}/messages/sync", response_model=SyncMessagesResponse)
+async def sync_conversation_messages(
+    conversation_id: str,
+    conv_repo: ConversationRepository = Depends(get_conversation_repo),
+    worker_repo: WorkerRepository = Depends(get_worker_repo),
+    msg_repo: MessageRepository = Depends(get_message_repo)
+):
+    """Sync messages from code tool for a conversation."""
+    conversation = conv_repo.get(conversation_id)
+
+    if not conversation:
+        raise HTTPException(status_code=404, detail=f"Conversation not found: {conversation_id}")
+
+    if not conversation.raw_conversation_id:
+        raise HTTPException(status_code=400, detail="Conversation has no raw_conversation_id, cannot sync")
+
+    # Get worker record
+    worker_record = worker_repo.get(conversation.worker_id)
+    if not worker_record:
+        raise HTTPException(status_code=404, detail=f"Worker not found: {conversation.worker_id}")
+
+    # Get worker class from handlers registry
+    worker_class = handlers.get(worker_record.type)
+    if not worker_class:
+        raise HTTPException(status_code=400, detail=f"Unknown worker type: {worker_record.type}")
+
+    # Instantiate worker
+    worker_instance = worker_class(
+        env_vars=worker_record.env_vars,
+        command_params=worker_record.command_params
+    )
+
+    # Sync raw messages from code tool
+    try:
+        raw_messages = await worker_instance.sync_messages(conversation.raw_conversation_id)
+    except NotImplementedError:
+        raise HTTPException(status_code=501, detail=f"sync_messages not implemented for worker type: {worker_record.type}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to sync messages: {str(e)}")
+
+    # Convert raw messages to MessageDO objects
+    message_dos = [
+        _convert_raw_message_to_do(raw_msg, conversation_id, conversation.worker_id)
+        for raw_msg in raw_messages
+    ]
+
+    # Add messages to database (duplicates will be skipped via uuid uniqueness)
+    synced_count = msg_repo.add_batch(message_dos)
+
+    # Get total message count
+    total_messages = len(msg_repo.get_by_conversation(conversation_id, limit=10000))
+
+    return SyncMessagesResponse(
+        conversation_id=conversation_id,
+        synced_count=synced_count,
+        total_messages=total_messages
     )

@@ -21,27 +21,25 @@ class ConversationRepository(BaseRepository):
             True if successful, False otherwise
         """
         try:
-            # Unset current conversation for this worker if needed
-            if conversation.is_current:
-                self.conn.execute(
-                    "UPDATE conversations SET is_current = FALSE WHERE worker_id = ?",
-                    [conversation.worker_id]
-                )
+            # Use string formatting to avoid prepared statement cache issues
+            metadata_json = json.dumps(conversation.metadata) if conversation.metadata else '{}'
+            raw_conv_id = f"'{conversation.raw_conversation_id}'" if conversation.raw_conversation_id else "NULL"
 
-            self.conn.execute("""
+            sql = f"""
                 INSERT INTO conversations (id, worker_id, project_path, name, created_at, last_activity, is_current, raw_conversation_id, metadata)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, [
-                conversation.id,
-                conversation.worker_id,
-                conversation.project_path,
-                conversation.name,
-                conversation.created_at,
-                conversation.last_activity,
-                conversation.is_current,
-                conversation.raw_conversation_id,
-                json.dumps(conversation.metadata) if conversation.metadata else '{}'
-            ])
+                VALUES (
+                    '{conversation.id}',
+                    '{conversation.worker_id}',
+                    '{conversation.project_path}',
+                    '{conversation.name}',
+                    '{conversation.created_at.isoformat()}',
+                    '{conversation.last_activity.isoformat()}',
+                    {conversation.is_current},
+                    {raw_conv_id},
+                    '{metadata_json}'
+                )
+            """
+            self.conn.execute(sql)
             self.conn.commit()
             self.logger.info(f"Created conversation record: {conversation.id}")
             return True

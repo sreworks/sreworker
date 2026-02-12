@@ -73,18 +73,26 @@ class DatabaseConnection:
             except Exception:
                 pass  # Column already exists or table doesn't support ALTER
 
-            # Messages table
+            # Messages table - abstract model for different code tools
             self.conn.execute("""
                 CREATE TABLE IF NOT EXISTS messages (
                     id BIGINT PRIMARY KEY,
                     conversation_id VARCHAR NOT NULL,
                     worker_id VARCHAR NOT NULL,
-                    role VARCHAR NOT NULL,
-                    content TEXT NOT NULL,
-                    timestamp TIMESTAMP NOT NULL,
-                    metadata JSON
+                    message_type VARCHAR NOT NULL,
+                    uuid VARCHAR NOT NULL,
+                    content JSON NOT NULL,
+                    timestamp TIMESTAMP NOT NULL
                 )
             """)
+
+            # Add unique constraint on uuid to prevent duplicate syncing
+            try:
+                self.conn.execute("""
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_uuid ON messages(uuid)
+                """)
+            except Exception:
+                pass  # Index already exists
 
             # Create indexes
             self.conn.execute("CREATE INDEX IF NOT EXISTS idx_workers_type ON workers(type)")

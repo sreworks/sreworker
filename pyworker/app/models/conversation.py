@@ -44,11 +44,11 @@ class RenameConversationRequest(BaseModel):
     new_name: str = Field(description="New conversation name", min_length=1, max_length=200)
 
 
-class CreateMessageRequest(BaseModel):
-    """Request model for creating a message."""
+class CreateInputRequest(BaseModel):
+    """Request model for creating an input."""
 
-    role: str = Field(description="Message role (user/assistant)")
-    content: str = Field(description="Message content", min_length=1)
+    role: str = Field(description="Input role (user/assistant)")
+    content: str = Field(description="Input content", min_length=1)
     metadata: Optional[Dict[str, Any]] = Field(default=None, description="Optional metadata")
 
 
@@ -59,15 +59,15 @@ class ConversationListResponse(BaseModel):
     total: int = Field(description="Total number of conversations")
 
 
-class MessageResponse(BaseModel):
-    """Response model for a single message."""
+class InputResponse(BaseModel):
+    """Response model for a single input."""
 
-    id: Optional[int] = Field(None, description="Message ID")
+    id: Optional[int] = Field(None, description="Input ID")
     conversation_id: str = Field(description="Conversation ID")
     worker_name: str = Field(description="Worker name")
-    role: str = Field(description="Message role (user/assistant)")
-    content: str = Field(description="Message content")
-    timestamp: datetime = Field(description="Message timestamp")
+    role: str = Field(description="Input role (user/assistant)")
+    content: str = Field(description="Input content")
+    timestamp: datetime = Field(description="Input timestamp")
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Additional metadata")
 
     class Config:
@@ -76,9 +76,9 @@ class MessageResponse(BaseModel):
         }
 
 
-class ConversationMessageResponse(BaseModel):
-    """Response model for conversation messages."""
+class ConversationInputResponse(BaseModel):
+    """Response model for conversation inputs."""
 
     conversation_id: str = Field(description="Conversation ID")
-    messages: List[MessageResponse] = Field(description="List of messages")
-    total: int = Field(description="Total number of messages")
+    inputs: List[InputResponse] = Field(description="List of inputs")
+    total: int = Field(description="Total number of inputs")

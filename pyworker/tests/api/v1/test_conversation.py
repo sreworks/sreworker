@@ -15,7 +15,7 @@ class TestConversationCRUD:
         name = f"{name_prefix}-{TestConversationCRUD._worker_counter}"
         response = await client.post(
             "/api/v1/workers",
-            json={"name": name, "type": "claude"}
+            json={"name": name, "type": "claudecode"}
         )
         return response.json()["name"]
 
@@ -35,7 +35,7 @@ class TestConversationCRUD:
             "/api/v1/conversations",
             json={
                 "worker_name": worker_name,
-                "project_path": "/tmp/test-project",
+                "project_path": "/tmp",
                 "name": "Test Conversation"
             }
         )
@@ -44,7 +44,7 @@ class TestConversationCRUD:
         assert "id" in data
         assert data["name"] == "Test Conversation"
         assert data["worker_name"] == worker_name
-        assert data["project_path"] == "/tmp/test-project"
+        assert data["project_path"] == "/tmp"
 
     async def test_create_conversation_auto_name(self, client: AsyncClient):
         """Test creating conversation with auto-generated name."""
@@ -54,7 +54,7 @@ class TestConversationCRUD:
             "/api/v1/conversations",
             json={
                 "worker_name": worker_name,
-                "project_path": "/tmp/test-project"
+                "project_path": "/tmp"
             }
         )
         assert response.status_code == 201
@@ -67,10 +67,24 @@ class TestConversationCRUD:
             "/api/v1/conversations",
             json={
                 "worker_name": "non-existent-worker",
-                "project_path": "/tmp/test-project"
+                "project_path": "/tmp"
             }
         )
         assert response.status_code == 404
+
+    async def test_create_conversation_invalid_path(self, client: AsyncClient):
+        """Test creating conversation with non-existent path fails."""
+        worker_name = await self._create_worker(client)
+
+        response = await client.post(
+            "/api/v1/conversations",
+            json={
+                "worker_name": worker_name,
+                "project_path": "/non/existent/path"
+            }
+        )
+        assert response.status_code == 400
+        assert "project_path does not exist" in response.json()["detail"]
 
     async def test_get_conversation(self, client: AsyncClient):
         """Test getting a conversation by ID."""
@@ -81,7 +95,7 @@ class TestConversationCRUD:
             "/api/v1/conversations",
             json={
                 "worker_name": worker_name,
-                "project_path": "/tmp/test-project",
+                "project_path": "/tmp",
                 "name": "Test Conversation"
             }
         )
@@ -109,7 +123,7 @@ class TestConversationCRUD:
             "/api/v1/conversations",
             json={
                 "worker_name": worker_name,
-                "project_path": "/tmp/test-project"
+                "project_path": "/tmp"
             }
         )
 
@@ -128,11 +142,11 @@ class TestConversationCRUD:
         # Create conversations for both workers
         await client.post(
             "/api/v1/conversations",
-            json={"worker_name": worker1_id, "project_path": "/tmp/project1"}
+            json={"worker_name": worker1_id, "project_path": "/tmp"}
         )
         await client.post(
             "/api/v1/conversations",
-            json={"worker_name": worker2_id, "project_path": "/tmp/project2"}
+            json={"worker_name": worker2_id, "project_path": "/tmp"}
         )
 
         # List all
@@ -153,7 +167,7 @@ class TestConversationCRUD:
         # Create conversation
         create_response = await client.post(
             "/api/v1/conversations",
-            json={"worker_name": worker_name, "project_path": "/tmp/test-project"}
+            json={"worker_name": worker_name, "project_path": "/tmp"}
         )
         conversation_id = create_response.json()["id"]
 
@@ -180,7 +194,7 @@ class TestConversationCRUD:
             "/api/v1/conversations",
             json={
                 "worker_name": worker_name,
-                "project_path": "/tmp/test-project",
+                "project_path": "/tmp",
                 "name": "Original Name"
             }
         )
@@ -205,114 +219,47 @@ class TestConversationCRUD:
         )
         assert response.status_code == 404
 
-    async def test_get_conversation_messages_empty(self, client: AsyncClient):
-        """Test getting messages from empty conversation."""
+    async def test_create_two_conversations_consecutively(self, client: AsyncClient):
+        """Test creating two conversations consecutively with unique IDs."""
         worker_name = await self._create_worker(client)
 
-        # Create conversation
-        create_response = await client.post(
+        # Create first conversation
+        response1 = await client.post(
             "/api/v1/conversations",
-            json={"worker_name": worker_name, "project_path": "/tmp/test-project"}
-        )
-        conversation_id = create_response.json()["id"]
-
-        # Get messages
-        response = await client.get(f"/api/v1/conversations/{conversation_id}/messages")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["conversation_id"] == conversation_id
-        assert data["messages"] == []
-        assert data["total"] == 0
-
-    async def test_get_conversation_messages_not_found(self, client: AsyncClient):
-        """Test getting messages from non-existent conversation returns 404."""
-        response = await client.get("/api/v1/conversations/non-existent-id/messages")
-        assert response.status_code == 404
-
-    async def test_create_message(self, client: AsyncClient):
-        """Test creating a message in a conversation."""
-        worker_name = await self._create_worker(client)
-
-        # Create conversation
-        create_response = await client.post(
-            "/api/v1/conversations",
-            json={"worker_name": worker_name, "project_path": "/tmp/test-project"}
-        )
-        conversation_id = create_response.json()["id"]
-
-        # Create message
-        response = await client.post(
-            f"/api/v1/conversations/{conversation_id}/messages",
-            json={"role": "user", "content": "Hello, world!"}
-        )
-        assert response.status_code == 201
-        data = response.json()
-        assert data["role"] == "user"
-        assert data["content"] == "Hello, world!"
-        assert data["conversation_id"] == conversation_id
-        assert data["worker_name"] == worker_name
-
-    async def test_create_message_not_found(self, client: AsyncClient):
-        """Test creating message in non-existent conversation returns 404."""
-        response = await client.post(
-            "/api/v1/conversations/non-existent-id/messages",
-            json={"role": "user", "content": "Hello"}
-        )
-        assert response.status_code == 404
-
-    async def test_create_and_get_messages(self, client: AsyncClient):
-        """Test creating multiple messages and retrieving them."""
-        worker_name = await self._create_worker(client)
-
-        # Create conversation
-        create_response = await client.post(
-            "/api/v1/conversations",
-            json={"worker_name": worker_name, "project_path": "/tmp/test-project"}
-        )
-        conversation_id = create_response.json()["id"]
-
-        # Create messages
-        await client.post(
-            f"/api/v1/conversations/{conversation_id}/messages",
-            json={"role": "user", "content": "Hello"}
-        )
-        await client.post(
-            f"/api/v1/conversations/{conversation_id}/messages",
-            json={"role": "assistant", "content": "Hi there!"}
-        )
-
-        # Get messages (reverse order: newest first)
-        response = await client.get(f"/api/v1/conversations/{conversation_id}/messages")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["total"] == 2
-        assert len(data["messages"]) == 2
-        assert data["messages"][0]["role"] == "assistant"
-        assert data["messages"][0]["content"] == "Hi there!"
-        assert data["messages"][1]["role"] == "user"
-        assert data["messages"][1]["content"] == "Hello"
-
-    async def test_create_message_with_metadata(self, client: AsyncClient):
-        """Test creating a message with metadata."""
-        worker_name = await self._create_worker(client)
-
-        # Create conversation
-        create_response = await client.post(
-            "/api/v1/conversations",
-            json={"worker_name": worker_name, "project_path": "/tmp/test-project"}
-        )
-        conversation_id = create_response.json()["id"]
-
-        # Create message with metadata
-        response = await client.post(
-            f"/api/v1/conversations/{conversation_id}/messages",
             json={
-                "role": "user",
-                "content": "Test message",
-                "metadata": {"source": "test", "priority": 1}
+                "worker_name": worker_name,
+                "project_path": "/tmp",
+                "name": "First Conversation"
             }
         )
-        assert response.status_code == 201
-        data = response.json()
-        assert data["metadata"]["source"] == "test"
-        assert data["metadata"]["priority"] == 1
+        assert response1.status_code == 201
+        data1 = response1.json()
+        conversation_id_1 = data1["id"]
+
+        # Create second conversation
+        response2 = await client.post(
+            "/api/v1/conversations",
+            json={
+                "worker_name": worker_name,
+                "project_path": "/tmp",
+                "name": "Second Conversation"
+            }
+        )
+        assert response2.status_code == 201
+        data2 = response2.json()
+        conversation_id_2 = data2["id"]
+
+        # Verify IDs are different
+        assert conversation_id_1 != conversation_id_2
+
+        # Verify both exist
+        get1 = await client.get(f"/api/v1/conversations/{conversation_id_1}")
+        get2 = await client.get(f"/api/v1/conversations/{conversation_id_2}")
+        assert get1.status_code == 200
+        assert get2.status_code == 200
+        assert get1.json()["name"] == "First Conversation"
+        assert get2.json()["name"] == "Second Conversation"
+
+        # Verify total count
+        list_response = await client.get("/api/v1/conversations")
+        assert list_response.json()["total"] == 2

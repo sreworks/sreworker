@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from ...models.worker import WorkerResponse, CreateWorkerRequest
 from ...db import DatabaseConnection, WorkerRepository
 from ...db.database_models import WorkerDO
+from ...workers import handlers, default as default_type
 
 router = APIRouter(prefix="/api/v1/workers", tags=["Workers"])
 
@@ -49,6 +50,13 @@ async def create_worker(
     if existing:
         raise HTTPException(status_code=400, detail=f"Worker '{request.name}' already exists")
 
+    # Validate worker type
+    if request.type not in handlers:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown worker type: '{request.type}'. Available types: {list(handlers.keys())}"
+        )
+
     worker = WorkerDO(
         id=request.name,
         type=request.type,
@@ -67,6 +75,15 @@ async def create_worker(
         command_params=worker.command_params,
         created_at=worker.created_at
     )
+
+
+@router.get("/types", response_model=dict)
+async def list_worker_types():
+    """List available worker types."""
+    return {
+        "types": list(handlers.keys()),
+        "default": default_type
+    }
 
 
 @router.get("/{worker_name}", response_model=WorkerResponse)

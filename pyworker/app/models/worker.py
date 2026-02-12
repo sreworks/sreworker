@@ -14,7 +14,7 @@ class CreateWorkerRequest(BaseModel):
     """Request model for creating a worker."""
 
     name: str = Field(description="Worker name (used as ID)")
-    type: str = Field(default="claude", description="Worker type")
+    type: str = Field(default="claudecode", description="Worker type")
     env_vars: Optional[Dict[str, str]] = Field(default_factory=dict, description="Environment variables")
     command_params: Optional[List[str]] = Field(default_factory=list, description="Command line parameters")
 

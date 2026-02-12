@@ -32,7 +32,7 @@ class TestWorkerCRUD:
             "/api/v1/workers",
             json={
                 "name": "test-worker",
-                "type": "claude",
+                "type": "claudecode",
                 "env_vars": {"TEST_VAR": "test_value"},
                 "command_params": ["--verbose"]
             }
@@ -40,7 +40,7 @@ class TestWorkerCRUD:
         assert response.status_code == 201
         data = response.json()
         assert data["name"] == "test-worker"
-        assert data["type"] == "claude"
+        assert data["type"] == "claudecode"
         assert data["env_vars"] == {"TEST_VAR": "test_value"}
         assert data["command_params"] == ["--verbose"]
 
@@ -52,13 +52,13 @@ class TestWorkerCRUD:
         )
         assert response.status_code == 201
         data = response.json()
-        assert data["type"] == "claude"
+        assert data["type"] == "claudecode"
 
     async def test_create_worker_invalid_name_with_space(self, client: AsyncClient):
         """Test creating worker with invalid name (contains space) fails."""
         response = await client.post(
             "/api/v1/workers",
-            json={"name": "invalid worker", "type": "claude"}
+            json={"name": "invalid worker", "type": "claudecode"}
         )
         assert response.status_code == 422
 
@@ -66,7 +66,7 @@ class TestWorkerCRUD:
         """Test creating worker with invalid name (starts with number) fails."""
         response = await client.post(
             "/api/v1/workers",
-            json={"name": "123worker", "type": "claude"}
+            json={"name": "123worker", "type": "claudecode"}
         )
         assert response.status_code == 422
 
@@ -74,7 +74,7 @@ class TestWorkerCRUD:
         """Test creating worker with invalid name (special chars) fails."""
         response = await client.post(
             "/api/v1/workers",
-            json={"name": "worker@test", "type": "claude"}
+            json={"name": "worker@test", "type": "claudecode"}
         )
         assert response.status_code == 422
 
@@ -82,7 +82,7 @@ class TestWorkerCRUD:
         """Test creating worker with valid name containing hyphen."""
         response = await client.post(
             "/api/v1/workers",
-            json={"name": "my-worker-1", "type": "claude"}
+            json={"name": "my-worker-1", "type": "claudecode"}
         )
         assert response.status_code == 201
         assert response.json()["name"] == "my-worker-1"
@@ -91,7 +91,7 @@ class TestWorkerCRUD:
         """Test creating worker with valid name containing underscore."""
         response = await client.post(
             "/api/v1/workers",
-            json={"name": "my_worker_2", "type": "claude"}
+            json={"name": "my_worker_2", "type": "claudecode"}
         )
         assert response.status_code == 201
         assert response.json()["name"] == "my_worker_2"
@@ -101,14 +101,14 @@ class TestWorkerCRUD:
         # Create first worker
         response1 = await client.post(
             "/api/v1/workers",
-            json={"name": "duplicate-test", "type": "claude"}
+            json={"name": "duplicate-test", "type": "claudecode"}
         )
         assert response1.status_code == 201
 
         # Try to create second worker with same name
         response2 = await client.post(
             "/api/v1/workers",
-            json={"name": "duplicate-test", "type": "claude"}
+            json={"name": "duplicate-test", "type": "claudecode"}
         )
         assert response2.status_code == 400
         assert "already exists" in response2.json()["detail"]
@@ -118,7 +118,7 @@ class TestWorkerCRUD:
         # Create worker first
         create_response = await client.post(
             "/api/v1/workers",
-            json={"name": "get-test", "type": "claude"}
+            json={"name": "get-test", "type": "claudecode"}
         )
         worker_name = create_response.json()["name"]
 
@@ -127,7 +127,7 @@ class TestWorkerCRUD:
         assert response.status_code == 200
         data = response.json()
         assert data["name"] == worker_name
-        assert data["type"] == "claude"
+        assert data["type"] == "claudecode"
 
     async def test_get_worker_not_found(self, client: AsyncClient):
         """Test getting non-existent worker returns 404."""
@@ -139,7 +139,7 @@ class TestWorkerCRUD:
         # Create worker first
         create_response = await client.post(
             "/api/v1/workers",
-            json={"name": "delete-test", "type": "claude"}
+            json={"name": "delete-test", "type": "claudecode"}
         )
         worker_name = create_response.json()["name"]
 
@@ -163,7 +163,7 @@ class TestWorkerCRUD:
         # Create worker
         await client.post(
             "/api/v1/workers",
-            json={"name": "list-test", "type": "claude"}
+            json={"name": "list-test", "type": "claudecode"}
         )
 
         # List workers
@@ -179,7 +179,7 @@ class TestWorkerCRUD:
             "/api/v1/workers",
             json={
                 "name": "persist-test",
-                "type": "claude",
+                "type": "claudecode",
                 "env_vars": {"API_KEY": "secret123", "DEBUG": "true"},
                 "command_params": ["--model", "claude-3"]
             }

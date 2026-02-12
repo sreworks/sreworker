@@ -19,15 +19,15 @@ class ConversationManager:
         self.base_path = Path(base_path)
 
     def _get_conversation_path(self, worker_name: str, conversation_id: str) -> Path:
-        """Get the file path for a conversation."""
+        """Get the file path for a conversation's inputs."""
         prefix = conversation_id[:2]
-        return self.base_path / worker_name / prefix / f"{conversation_id}.jsonl"
+        return self.base_path / worker_name / prefix / f"{conversation_id}.input.jsonl"
 
     def _ensure_dir(self, file_path: Path) -> None:
         """Ensure the directory exists."""
         file_path.parent.mkdir(parents=True, exist_ok=True)
 
-    def add_message(
+    def add_input(
         self,
         worker_name: str,
         conversation_id: str,
@@ -36,22 +36,22 @@ class ConversationManager:
         metadata: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
-        Add a message to a conversation.
+        Add an input to a conversation.
 
         Args:
             worker_name: Worker name
             conversation_id: Conversation ID
-            role: Message role (user/assistant)
-            content: Message content
+            role: Input role (user/assistant)
+            content: Input content
             metadata: Optional metadata
 
         Returns:
-            The message record that was added
+            The input record that was added
         """
         file_path = self._get_conversation_path(worker_name, conversation_id)
         self._ensure_dir(file_path)
 
-        message = {
+        input_record = {
             "role": role,
             "content": content,
             "timestamp": datetime.utcnow().isoformat(),
@@ -59,28 +59,28 @@ class ConversationManager:
         }
 
         with open(file_path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(message, ensure_ascii=False) + "\n")
+            f.write(json.dumps(input_record, ensure_ascii=False) + "\n")
 
-        return message
+        return input_record
 
-    def get_messages(
+    def get_inputs(
         self,
         worker_name: str,
         conversation_id: str,
         limit: int = 100
     ) -> List[Dict[str, Any]]:
         """
-        Get messages from a conversation.
+        Get inputs from a conversation.
 
         Memory efficient - only reads the last N lines from file.
 
         Args:
             worker_name: Worker name
             conversation_id: Conversation ID
-            limit: Maximum number of messages to return
+            limit: Maximum number of inputs to return
 
         Returns:
-            List of messages (chronological order, oldest first)
+            List of inputs (chronological order, oldest first)
         """
         file_path = self._get_conversation_path(worker_name, conversation_id)
 
