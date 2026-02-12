@@ -12,7 +12,7 @@ class ConversationDO:
     id: str
     worker_id: str
     project_path: str
-    name: str
+    name: Optional[str] = None
     created_at: datetime = field(default_factory=datetime.utcnow)
     last_activity: datetime = field(default_factory=datetime.utcnow)
     is_current: bool = False

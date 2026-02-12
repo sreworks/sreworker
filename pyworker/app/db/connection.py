@@ -56,7 +56,7 @@ class DatabaseConnection:
                     id VARCHAR PRIMARY KEY,
                     worker_id VARCHAR NOT NULL,
                     project_path VARCHAR NOT NULL,
-                    name VARCHAR NOT NULL,
+                    name VARCHAR,
                     created_at TIMESTAMP NOT NULL,
                     last_activity TIMESTAMP NOT NULL,
                     is_current BOOLEAN DEFAULT FALSE,

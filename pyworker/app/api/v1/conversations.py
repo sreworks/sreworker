@@ -19,7 +19,7 @@ from ...models.message import (
     ConversationMessagesResponse,
     SyncMessagesResponse
 )
-from ...db import DatabaseConnection, ConversationRepository, WorkerRepository, MessageRepository
+from ...db import DatabaseConnection, ConversationRepository, WorkerRepository
 from ...db.database_models import ConversationDO
 from ...services import ConversationManager
 from ...workers import handlers
@@ -51,13 +51,6 @@ def get_worker_repo() -> WorkerRepository:
     if db_conn is None:
         raise HTTPException(status_code=500, detail="Database not initialized")
     return WorkerRepository(db_conn.conn)
-
-
-def get_message_repo() -> MessageRepository:
-    """Dependency to get message repository."""
-    if db_conn is None:
-        raise HTTPException(status_code=500, detail="Database not initialized")
-    return MessageRepository(db_conn.conn)
 
 
 def _to_response(conv: ConversationDO) -> ConversationResponse:
@@ -114,7 +107,7 @@ async def create_conversation(
         id=str(uuid.uuid4()),
         worker_id=request.worker_name,
         project_path=request.project_path,
-        name=request.name or f"Conversation {now.strftime('%Y-%m-%d %H:%M')}",
+        name=request.name,
         created_at=now,
         last_activity=now,
         is_current=True,
@@ -301,7 +294,7 @@ async def get_conversation_messages(
     conversation_id: str,
     limit: int = Query(100, ge=1, le=1000),
     conv_repo: ConversationRepository = Depends(get_conversation_repo),
-    msg_repo: MessageRepository = Depends(get_message_repo)
+    manager: ConversationManager = Depends(get_conv_manager)
 ):
     """Get messages from a conversation."""
     conversation = conv_repo.get(conversation_id)
@@ -309,63 +302,37 @@ async def get_conversation_messages(
     if not conversation:
         raise HTTPException(status_code=404, detail=f"Conversation not found: {conversation_id}")
 
-    messages = msg_repo.get_by_conversation(conversation_id, limit=limit)
+    raw_messages = manager.get_messages(conversation.worker_id, conversation_id, limit=limit)
 
     return ConversationMessagesResponse(
         conversation_id=conversation_id,
         messages=[
-            MessageResponse(
-                id=m.id,
-                message_type=m.message_type,
-                uuid=m.uuid,
-                content=m.content,
-                timestamp=m.timestamp
-            )
-            for m in messages
+            _raw_msg_to_response(raw_msg)
+            for raw_msg in raw_messages
         ],
-        total=len(messages)
+        total=len(raw_messages)
     )
 
 
-def _convert_raw_message_to_do(
-    raw_msg: dict,
-    conversation_id: str,
-    worker_id: str
-) -> "MessageDO":
-    """
-    Convert raw message from code tool to MessageDO.
-
-    Args:
-        raw_msg: Raw message dict from code tool
-        conversation_id: Local conversation ID
-        worker_id: Worker ID
-
-    Returns:
-        MessageDO instance
-    """
-    from ...db.database_models import MessageDO
-
+def _raw_msg_to_response(raw_msg: dict) -> MessageResponse:
+    """Convert a raw message dict (from JSONL) to MessageResponse."""
     msg_type = raw_msg.get("type", "unknown")
 
-    # Extract uuid - different message types may have it in different places
     msg_uuid = raw_msg.get("uuid") or raw_msg.get("sessionId") or ""
     if not msg_uuid:
-        # Generate a pseudo-uuid from type and timestamp if not available
         msg_uuid = f"{msg_type}-{raw_msg.get('timestamp', '')}"
 
-    # Parse timestamp
     timestamp_str = raw_msg.get("timestamp", "")
     try:
         timestamp = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
     except (ValueError, AttributeError):
         timestamp = datetime.utcnow()
 
-    return MessageDO(
-        conversation_id=conversation_id,
-        worker_id=worker_id,
+    return MessageResponse(
+        id=None,
         message_type=msg_type,
         uuid=msg_uuid,
-        content=raw_msg,  # Store the entire raw message as content
+        content=raw_msg,
         timestamp=timestamp
     )
 
@@ -375,7 +342,7 @@ async def sync_conversation_messages(
     conversation_id: str,
     conv_repo: ConversationRepository = Depends(get_conversation_repo),
     worker_repo: WorkerRepository = Depends(get_worker_repo),
-    msg_repo: MessageRepository = Depends(get_message_repo)
+    manager: ConversationManager = Depends(get_conv_manager)
 ):
     """Sync messages from code tool for a conversation."""
     conversation = conv_repo.get(conversation_id)
@@ -410,20 +377,11 @@ async def sync_conversation_messages(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to sync messages: {str(e)}")
 
-    # Convert raw messages to MessageDO objects
-    message_dos = [
-        _convert_raw_message_to_do(raw_msg, conversation_id, conversation.worker_id)
-        for raw_msg in raw_messages
-    ]
-
-    # Add messages to database (duplicates will be skipped via uuid uniqueness)
-    synced_count = msg_repo.add_batch(message_dos)
-
-    # Get total message count
-    total_messages = len(msg_repo.get_by_conversation(conversation_id, limit=10000))
+    # Save raw messages to JSONL file (full overwrite)
+    synced_count = manager.save_messages(conversation.worker_id, conversation_id, raw_messages)
 
     return SyncMessagesResponse(
         conversation_id=conversation_id,
         synced_count=synced_count,
-        total_messages=total_messages
+        total_messages=synced_count
     )

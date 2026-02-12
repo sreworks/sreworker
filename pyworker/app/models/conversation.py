@@ -10,7 +10,7 @@ class ConversationResponse(BaseModel):
 
     id: str = Field(description="Conversation ID")
     worker_name: str = Field(description="Worker name this conversation belongs to")
-    name: str = Field(description="Conversation name")
+    name: Optional[str] = Field(None, description="Conversation name")
     project_path: str = Field(description="Project path for this conversation")
     created_at: datetime = Field(description="Creation timestamp")
     last_activity: datetime = Field(description="Last activity timestamp")

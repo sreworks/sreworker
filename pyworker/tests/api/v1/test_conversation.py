@@ -46,8 +46,8 @@ class TestConversationCRUD:
         assert data["worker_name"] == worker_name
         assert data["project_path"] == "/tmp"
 
-    async def test_create_conversation_auto_name(self, client: AsyncClient):
-        """Test creating conversation with auto-generated name."""
+    async def test_create_conversation_no_name(self, client: AsyncClient):
+        """Test creating conversation without name defaults to null."""
         worker_name = await self._create_worker(client)
 
         response = await client.post(
@@ -59,7 +59,7 @@ class TestConversationCRUD:
         )
         assert response.status_code == 201
         data = response.json()
-        assert "Conversation" in data["name"]
+        assert data["name"] is None
 
     async def test_create_conversation_invalid_worker(self, client: AsyncClient):
         """Test creating conversation with invalid worker fails."""
