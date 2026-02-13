@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
+from ..models.message import MessageResponse
 from ..utils import read_last_n_lines
 
 
@@ -101,7 +102,7 @@ class ConversationManager:
         self,
         worker_name: str,
         conversation_id: str,
-        raw_messages: List[Dict[str, Any]]
+        messages: List[MessageResponse]
     ) -> int:
         """
         Save synced messages to JSONL file (full overwrite).
@@ -109,7 +110,7 @@ class ConversationManager:
         Args:
             worker_name: Worker name
             conversation_id: Conversation ID
-            raw_messages: Raw messages from worker's sync_messages()
+            messages: Standardized messages from worker's sync_messages()
 
         Returns:
             Number of messages written
@@ -118,17 +119,17 @@ class ConversationManager:
         self._ensure_dir(file_path)
 
         with open(file_path, "w", encoding="utf-8") as f:
-            for msg in raw_messages:
-                f.write(json.dumps(msg, ensure_ascii=False) + "\n")
+            for msg in messages:
+                f.write(msg.model_dump_json() + "\n")
 
-        return len(raw_messages)
+        return len(messages)
 
     def get_messages(
         self,
         worker_name: str,
         conversation_id: str,
         limit: int = 100
-    ) -> List[Dict[str, Any]]:
+    ) -> List[MessageResponse]:
         """
         Get synced messages from JSONL file.
 
@@ -138,7 +139,7 @@ class ConversationManager:
             limit: Maximum number of messages to return
 
         Returns:
-            List of messages (chronological order, oldest first)
+            List of MessageResponse (chronological order, oldest first)
         """
         file_path = self._get_messages_path(worker_name, conversation_id)
 
@@ -146,7 +147,7 @@ class ConversationManager:
             return []
 
         lines = read_last_n_lines(file_path, limit)
-        return [json.loads(line) for line in lines if line.strip()]
+        return [MessageResponse.model_validate_json(line) for line in lines if line.strip()]
 
     def delete_conversation(self, worker_name: str, conversation_id: str) -> bool:
         """

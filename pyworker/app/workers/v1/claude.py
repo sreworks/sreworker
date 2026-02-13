@@ -4,10 +4,12 @@ import asyncio
 import json
 import os
 import shutil
+from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, List, Any
 
 from .base import BaseWorker
+from ...models.message import MessageResponse, MessageContent
 from ...utils.logger import get_app_logger
 
 
@@ -138,7 +140,7 @@ class ClaudeCodeWorker(BaseWorker):
 
         return None
 
-    async def sync_messages(self, raw_conversation_id: str) -> List[Dict[str, Any]]:
+    async def sync_messages(self, raw_conversation_id: str) -> List[MessageResponse]:
         """
         从 Claude Code 同步会话消息
 
@@ -146,20 +148,106 @@ class ClaudeCodeWorker(BaseWorker):
             raw_conversation_id: Claude Code session_id
 
         Returns:
-            原始消息列表（Claude Code JSONL 格式）
+            标准化消息列表
         """
         session_file = self._find_session_file(raw_conversation_id)
         if not session_file:
             return []
 
-        messages = []
+        messages: List[MessageResponse] = []
         with open(session_file, "r", encoding="utf-8") as f:
             for line in f:
                 if line.strip():
                     try:
                         data = json.loads(line.strip())
-                        messages.append(data)
-                    except json.JSONDecodeError:
+                        msg = self._convert_raw_message(data)
+                        if msg:
+                            messages.append(msg)
+                    except (json.JSONDecodeError, Exception):
                         continue
 
         return messages
+
+    def _convert_raw_message(self, raw: Dict[str, Any]) -> Optional[MessageResponse]:
+        """Convert a raw Claude Code JSONL entry to MessageResponse."""
+        msg_type = raw.get("type", "unknown")
+        msg_uuid = raw.get("uuid") or raw.get("sessionId") or ""
+        if not msg_uuid:
+            msg_uuid = f"{msg_type}-{raw.get('timestamp', '')}"
+
+        # Parse timestamp
+        timestamp_str = raw.get("timestamp", "")
+        try:
+            timestamp = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
+        except (ValueError, AttributeError):
+            timestamp = datetime.utcnow()
+
+        parent_uuid = raw.get("parentUuid")
+        model = None
+        usage = None
+        error = None
+        contents: List[MessageContent] = []
+
+        message = raw.get("message", {})
+
+        if msg_type == "user":
+            # User messages: message.content is a string or list
+            user_content = message.get("content", "")
+            if isinstance(user_content, str):
+                contents = [MessageContent(type="text", content=user_content)]
+            elif isinstance(user_content, list):
+                for block in user_content:
+                    if isinstance(block, dict) and block.get("type") == "text":
+                        contents.append(MessageContent(type="text", content=block.get("text", "")))
+        elif msg_type == "assistant":
+            # Assistant messages: message.content is a list of content blocks
+            model = message.get("model")
+            usage = message.get("usage")
+            assistant_content = message.get("content", [])
+            if isinstance(assistant_content, list):
+                for block in assistant_content:
+                    if not isinstance(block, dict):
+                        continue
+                    block_type = block.get("type", "")
+                    if block_type == "text":
+                        contents.append(MessageContent(type="text", content=block.get("text", "")))
+                    elif block_type == "tool_use":
+                        tool_input = block.get("input", {})
+                        contents.append(MessageContent(
+                            type="tool_use",
+                            content=json.dumps(tool_input, ensure_ascii=False),
+                            tool_name=block.get("name")
+                        ))
+                    elif block_type == "tool_result":
+                        result_content = block.get("content", "")
+                        if isinstance(result_content, list):
+                            result_content = json.dumps(result_content, ensure_ascii=False)
+                        elif not isinstance(result_content, str):
+                            result_content = str(result_content)
+                        contents.append(MessageContent(
+                            type="tool_result",
+                            content=result_content,
+                            tool_name=block.get("tool_use_id")
+                        ))
+                    else:
+                        contents.append(MessageContent(type=block_type, content=json.dumps(block, ensure_ascii=False)))
+            elif isinstance(assistant_content, str):
+                contents = [MessageContent(type="text", content=assistant_content)]
+
+            # Check for error
+            if message.get("error"):
+                error = str(message["error"])
+        else:
+            # queue-operation, system, etc.: contents stays empty
+            pass
+
+        return MessageResponse(
+            uuid=msg_uuid,
+            type=msg_type,
+            contents=contents,
+            timestamp=timestamp,
+            parent_uuid=parent_uuid,
+            model=model,
+            usage=usage,
+            error=error,
+        )

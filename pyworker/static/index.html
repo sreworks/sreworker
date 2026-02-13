@@ -377,13 +377,13 @@ function renderMessages(inputs, syncedMessages) {
   let html = '';
 
   if (syncedMessages.length > 0) {
-    // Use synced messages as primary source
+    // Use synced messages as primary source (standardized format)
     for (const m of syncedMessages) {
-      const type = m.message_type;
+      const type = m.type;
       if (type === 'user' || type === 'assistant') {
-        const content = extractContent(m);
-        if (content) {
-          html += `<div class="msg ${type}">${escapeHtml(content)}</div>`;
+        const rendered = renderContents(m.contents, type);
+        if (rendered) {
+          html += rendered;
         }
       }
     }
@@ -401,28 +401,19 @@ function renderMessages(inputs, syncedMessages) {
   container.innerHTML = html;
 }
 
-function extractContent(msg) {
-  // msg.content is the raw message from the code tool
-  // Try common content locations
-  const c = msg.content;
-  if (typeof c === 'string') return c;
-  if (c.message && typeof c.message === 'string') return c.message;
-  if (c.content && typeof c.content === 'string') return c.content;
-  // For Claude Code messages, content might be in message.content
-  if (c.message && c.message.content) {
-    if (typeof c.message.content === 'string') return c.message.content;
-    if (Array.isArray(c.message.content)) {
-      return c.message.content
-        .filter(b => b.type === 'text')
-        .map(b => b.text)
-        .join('\n');
+function renderContents(contents, type) {
+  if (!contents || contents.length === 0) return '';
+  let parts = [];
+  for (const block of contents) {
+    if (block.type === 'text') {
+      parts.push(escapeHtml(block.content));
+    } else if (block.type === 'tool_use') {
+      const name = block.tool_name || 'tool';
+      parts.push(`<span style="color:#f0c040;font-size:11px">[${escapeHtml(name)}]</span>`);
     }
   }
-  // For user type, try to find text
-  if (c.type === 'user' && Array.isArray(c.content)) {
-    return c.content.filter(b => b.type === 'text').map(b => b.text).join('\n');
-  }
-  return null;
+  if (parts.length === 0) return '';
+  return `<div class="msg ${type}">${parts.join('\n')}</div>`;
 }
 
 function escapeHtml(text) {

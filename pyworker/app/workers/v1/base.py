@@ -3,6 +3,8 @@
 from abc import ABC, abstractmethod
 from typing import Optional, Dict, Any, List
 
+from ...models.message import MessageResponse
+
 
 class BaseWorker(ABC):
     """Worker 业务逻辑抽象接口"""
@@ -44,7 +46,7 @@ class BaseWorker(ABC):
         pass
 
     @abstractmethod
-    async def sync_messages(self, raw_conversation_id: str) -> List[Dict[str, Any]]:
+    async def sync_messages(self, raw_conversation_id: str) -> List[MessageResponse]:
         """
         从代码工具侧同步会话消息
 
@@ -52,7 +54,7 @@ class BaseWorker(ABC):
             raw_conversation_id: 代码工具侧的会话 ID
 
         Returns:
-            原始消息列表（代码工具的原始 JSON 格式）
+            标准化消息列表
         """
         pass
 

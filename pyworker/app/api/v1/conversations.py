@@ -305,38 +305,12 @@ async def get_conversation_messages(
     if not conversation:
         raise HTTPException(status_code=404, detail=f"Conversation not found: {conversation_id}")
 
-    raw_messages = manager.get_messages(conversation.worker_id, conversation_id, limit=limit)
+    messages = manager.get_messages(conversation.worker_id, conversation_id, limit=limit)
 
     return ConversationMessagesResponse(
         conversation_id=conversation_id,
-        messages=[
-            _raw_msg_to_response(raw_msg)
-            for raw_msg in raw_messages
-        ],
-        total=len(raw_messages)
-    )
-
-
-def _raw_msg_to_response(raw_msg: dict) -> MessageResponse:
-    """Convert a raw message dict (from JSONL) to MessageResponse."""
-    msg_type = raw_msg.get("type", "unknown")
-
-    msg_uuid = raw_msg.get("uuid") or raw_msg.get("sessionId") or ""
-    if not msg_uuid:
-        msg_uuid = f"{msg_type}-{raw_msg.get('timestamp', '')}"
-
-    timestamp_str = raw_msg.get("timestamp", "")
-    try:
-        timestamp = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
-    except (ValueError, AttributeError):
-        timestamp = datetime.utcnow()
-
-    return MessageResponse(
-        id=None,
-        message_type=msg_type,
-        uuid=msg_uuid,
-        content=raw_msg,
-        timestamp=timestamp
+        messages=messages,
+        total=len(messages)
     )
 
 
@@ -372,16 +346,16 @@ async def sync_conversation_messages(
         command_params=worker_record.command_params
     )
 
-    # Sync raw messages from code tool
+    # Sync messages from code tool (already standardized by worker)
     try:
-        raw_messages = await worker_instance.sync_messages(conversation.raw_conversation_id)
+        messages = await worker_instance.sync_messages(conversation.raw_conversation_id)
     except NotImplementedError:
         raise HTTPException(status_code=501, detail=f"sync_messages not implemented for worker type: {worker_record.type}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to sync messages: {str(e)}")
 
-    # Save raw messages to JSONL file (full overwrite)
-    synced_count = manager.save_messages(conversation.worker_id, conversation_id, raw_messages)
+    # Save standardized messages to JSONL file (full overwrite)
+    synced_count = manager.save_messages(conversation.worker_id, conversation_id, messages)
 
     return SyncMessagesResponse(
         conversation_id=conversation_id,
