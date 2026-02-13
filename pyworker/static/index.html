@@ -409,7 +409,24 @@ function renderContents(contents, type) {
       parts.push(escapeHtml(block.content));
     } else if (block.type === 'tool_use') {
       const name = block.tool_name || 'tool';
-      parts.push(`<span style="color:#f0c040;font-size:11px">[${escapeHtml(name)}]</span>`);
+      let detail = block.content || '';
+      try {
+        const parsed = JSON.parse(detail);
+        detail = JSON.stringify(parsed, null, 2);
+      } catch {}
+      parts.push(
+        `<details style="margin:4px 0"><summary style="color:#f0c040;font-size:11px;cursor:pointer">[${escapeHtml(name)}]</summary><pre style="color:#aaa;font-size:11px;margin:4px 0 4px 8px;white-space:pre-wrap;word-break:break-word">${escapeHtml(detail)}</pre></details>`
+      );
+    } else if (block.type === 'tool_result') {
+      const name = block.tool_name || 'result';
+      let detail = block.content || '';
+      try {
+        const parsed = JSON.parse(detail);
+        detail = JSON.stringify(parsed, null, 2);
+      } catch {}
+      parts.push(
+        `<details style="margin:4px 0"><summary style="color:#80f080;font-size:11px;cursor:pointer">[result: ${escapeHtml(name)}]</summary><pre style="color:#aaa;font-size:11px;margin:4px 0 4px 8px;white-space:pre-wrap;word-break:break-word">${escapeHtml(detail)}</pre></details>`
+      );
     }
   }
   if (parts.length === 0) return '';
@@ -448,9 +465,7 @@ async function sendMessage() {
       role: 'user',
       content: content
     });
-    // Sync once after sending, then poll messages only
-    setStatus('syncing...', 'syncing');
-    await syncOnce();
+    // Watch auto-saves messages; just poll to pick them up
     startPolling();
   } catch (e) {
     setStatus('Error: ' + e.message, 'error');

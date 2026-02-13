@@ -22,6 +22,7 @@ from ...models.message import (
 from ...db import DatabaseConnection, ConversationRepository, WorkerRepository
 from ...db.database_models import ConversationDO
 from ...services import ConversationManager
+from ...services.file_manager import FileManager
 from ...workers import handlers
 
 router = APIRouter(prefix="/api/v1/conversations", tags=["Conversations"])
@@ -30,6 +31,8 @@ router = APIRouter(prefix="/api/v1/conversations", tags=["Conversations"])
 db_conn: DatabaseConnection = None
 # Conversation manager for file-based message storage (set by main.py)
 conv_manager: ConversationManager = None
+# File manager for file monitoring (set by main.py)
+file_manager: FileManager = None
 
 
 def get_conversation_repo() -> ConversationRepository:
@@ -243,7 +246,8 @@ async def create_input(
     # Instantiate worker
     worker_instance = worker_class(
         env_vars=worker_record.env_vars,
-        command_params=worker_record.command_params
+        command_params=worker_record.command_params,
+        file_manager=file_manager
     )
 
     # Call worker based on whether we have a raw_conversation_id
@@ -260,6 +264,13 @@ async def create_input(
             raise HTTPException(status_code=500, detail=f"Failed to start conversation: {str(e)}")
     else:
         # Continue existing conversation
+        # 先注册 session 监控，再发消息，这样 watch 不会错过文件变更
+        if hasattr(worker_class, 'activate_session'):
+            worker_class.activate_session(
+                conversation.raw_conversation_id, conversation_id, conversation.worker_id
+            )
+        if hasattr(worker_class, '_conv_manager_ref') and worker_class._conv_manager_ref is None:
+            worker_class._conv_manager_ref = conv_manager
         try:
             await worker_instance.continue_conversation(
                 raw_conversation_id=conversation.raw_conversation_id,
@@ -268,6 +279,24 @@ async def create_input(
             )
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to continue conversation: {str(e)}")
+
+    # 激活 session 监控 — start 场景在这里注册（continue 场景已在上面提前注册，这里幂等覆盖）
+    actual_raw_id = (raw_conversation_id
+                     if conversation.raw_conversation_id is None
+                     else conversation.raw_conversation_id)
+    if hasattr(worker_class, 'activate_session'):
+        worker_class.activate_session(actual_raw_id, conversation_id, conversation.worker_id)
+    # 注入 conv_manager 引用，供 watch 回调自动保存
+    if hasattr(worker_class, '_conv_manager_ref') and worker_class._conv_manager_ref is None:
+        worker_class._conv_manager_ref = conv_manager
+
+    # 立即执行一次 sync，防止 watch 激活晚于初始写入
+    try:
+        messages = await worker_instance.sync_messages(actual_raw_id)
+        if messages:
+            manager.save_messages(conversation.worker_id, conversation_id, messages)
+    except Exception:
+        pass  # 非致命，后续 watch 或 polling 会补上
 
     # Save input to local storage
     input_data = manager.add_input(
@@ -343,7 +372,8 @@ async def sync_conversation_messages(
     # Instantiate worker
     worker_instance = worker_class(
         env_vars=worker_record.env_vars,
-        command_params=worker_record.command_params
+        command_params=worker_record.command_params,
+        file_manager=file_manager
     )
 
     # Sync messages from code tool (already standardized by worker)

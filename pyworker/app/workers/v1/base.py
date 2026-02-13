@@ -1,16 +1,20 @@
 """Worker 抽象基类"""
 
 from abc import ABC, abstractmethod
-from typing import Optional, Dict, Any, List
+from typing import TYPE_CHECKING, Optional, Dict, Any, List
 
 from ...models.message import MessageResponse
+
+if TYPE_CHECKING:
+    from ...services.file_manager import FileManager
 
 
 class BaseWorker(ABC):
     """Worker 业务逻辑抽象接口"""
 
-    def __init__(self, env_vars: Optional[Dict[str, str]], command_params: Optional[List[str]]):
-        pass
+    def __init__(self, env_vars: Optional[Dict[str, str]], command_params: Optional[List[str]],
+                 file_manager: Optional["FileManager"] = None):
+        self.file_manager = file_manager
 
     @abstractmethod
     async def start_conversation(self, path, message) -> str:

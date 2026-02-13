@@ -8,6 +8,8 @@ from fastapi.responses import FileResponse
 from .db import DatabaseConnection
 from .api.v1 import workers, conversations
 from .services import ConversationManager
+from .services.file_manager import FileManager
+from .workers.v1.claude import ClaudeCodeWorker
 
 
 @asynccontextmanager
@@ -16,15 +18,20 @@ async def lifespan(app: FastAPI):
     # Startup
     db_conn = DatabaseConnection("./data/pyworker2.db")
     conv_manager = ConversationManager("./data/conversations")
+    fm = FileManager()
+    fm.start()
 
     # Inject dependencies into routers
     workers.db_conn = db_conn
     conversations.db_conn = db_conn
     conversations.conv_manager = conv_manager
+    conversations.file_manager = fm
 
     yield
 
     # Shutdown
+    ClaudeCodeWorker.stop_watching()
+    fm.stop()
     db_conn.close()
 
 

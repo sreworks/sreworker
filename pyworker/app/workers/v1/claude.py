@@ -6,11 +6,15 @@ import os
 import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Dict, List, Any
+from typing import TYPE_CHECKING, ClassVar, Optional, Dict, List, Any, Tuple
 
 from .base import BaseWorker
 from ...models.message import MessageResponse, MessageContent
 from ...utils.logger import get_app_logger
+
+if TYPE_CHECKING:
+    from ...services.file_manager import FileManager
+    from ...services.conversation_manager import ConversationManager
 
 
 class ClaudeCodeWorker(BaseWorker):
@@ -19,10 +23,76 @@ class ClaudeCodeWorker(BaseWorker):
     # Claude Code stores sessions in ~/.claude/projects/
     CLAUDE_PROJECTS_DIR = Path.home() / ".claude" / "projects"
 
-    def __init__(self, env_vars: Optional[Dict[str, str]] = None, command_params: Optional[List[str]] = None):
+    # Class-level state for directory watching
+    _active_sessions: ClassVar[Dict[str, Tuple[str, str]]] = {}  # raw_id -> (conversation_id, worker_id)
+    _file_manager: ClassVar[Optional["FileManager"]] = None
+    _conv_manager_ref: ClassVar[Optional["ConversationManager"]] = None
+    _watching: ClassVar[bool] = False
+
+    def __init__(self, env_vars: Optional[Dict[str, str]] = None,
+                 command_params: Optional[List[str]] = None,
+                 file_manager: Optional["FileManager"] = None):
+        super().__init__(env_vars, command_params, file_manager)
         self.env_vars = env_vars or {}
         self.command_params = command_params or []
         self.logger = get_app_logger()
+        # 首次实例化时自动启动目录监控
+        if file_manager is not None:
+            self.start_watching(file_manager)
+
+    @classmethod
+    def start_watching(cls, file_manager: "FileManager"):
+        """启动 ~/.claude/projects 目录监控（幂等）"""
+        if cls._watching:
+            return
+        cls._file_manager = file_manager
+        if cls.CLAUDE_PROJECTS_DIR.exists():
+            file_manager.watch_directory(
+                str(cls.CLAUDE_PROJECTS_DIR),
+                cls._on_session_changed
+            )
+        cls._watching = True
+
+    @classmethod
+    def activate_session(cls, raw_conversation_id: str, conversation_id: str, worker_id: str):
+        """将 session 加入激活集合，记录 conversation_id 和 worker_id"""
+        cls._active_sessions[raw_conversation_id] = (conversation_id, worker_id)
+
+    @classmethod
+    def deactivate_session(cls, raw_conversation_id: str):
+        """将 session 从激活集合移除"""
+        cls._active_sessions.pop(raw_conversation_id, None)
+
+    @classmethod
+    def stop_watching(cls):
+        """清理 class-level 状态（shutdown / test teardown 时调用）"""
+        if cls._watching and cls._file_manager:
+            cls._file_manager.unwatch_directory(
+                str(cls.CLAUDE_PROJECTS_DIR), cls._on_session_changed
+            )
+        cls._active_sessions.clear()
+        cls._file_manager = None
+        cls._conv_manager_ref = None
+        cls._watching = False
+
+    @classmethod
+    async def _on_session_changed(cls, path: Path):
+        """目录级回调：过滤 active sessions，sync + save messages"""
+        if path.suffix != '.jsonl':
+            return
+        session_id = path.stem
+        if session_id not in cls._active_sessions:
+            return
+        conversation_id, worker_id = cls._active_sessions[session_id]
+        logger = get_app_logger()
+        worker = cls()
+        try:
+            messages = await worker.sync_messages(session_id)
+            if cls._conv_manager_ref and messages:
+                cls._conv_manager_ref.save_messages(worker_id, conversation_id, messages)
+            logger.info(f"[ClaudeCode] Auto-synced & saved {len(messages)} messages for {session_id}")
+        except Exception:
+            logger.exception(f"[ClaudeCode] Failed to auto-sync {session_id}")
 
     async def start_conversation(self, path: str, message: str) -> str:
         """
@@ -43,7 +113,7 @@ class ClaudeCodeWorker(BaseWorker):
         if shutil.which("claude") is None:
             raise RuntimeError("claude command not found in PATH")
 
-        cmd = ["claude", "--print", "--output-format", "json"]
+        cmd = ["claude", "--print", "--output-format", "json", "--dangerously-skip-permissions"]
         cmd.append(message)
         cmd.extend(self.command_params)
 
@@ -95,7 +165,7 @@ class ClaudeCodeWorker(BaseWorker):
         Returns:
             是否成功
         """
-        cmd = ["claude", "--print", "--output-format", "json", "--resume", raw_conversation_id]
+        cmd = ["claude", "--print", "--output-format", "json", "--dangerously-skip-permissions", "--resume", raw_conversation_id]
         cmd.append(message)
         cmd.extend(self.command_params)
 
@@ -197,8 +267,20 @@ class ClaudeCodeWorker(BaseWorker):
                 contents = [MessageContent(type="text", content=user_content)]
             elif isinstance(user_content, list):
                 for block in user_content:
-                    if isinstance(block, dict) and block.get("type") == "text":
-                        contents.append(MessageContent(type="text", content=block.get("text", "")))
+                    if not isinstance(block, dict):
+                        continue
+                    block_type = block.get("type", "")
+                    # Prefer "text" field (text blocks), fall back to "content" (tool_result etc.)
+                    raw = block.get("text") or block.get("content", "")
+                    if isinstance(raw, list):
+                        raw = json.dumps(raw, ensure_ascii=False)
+                    elif not isinstance(raw, str):
+                        raw = str(raw)
+                    contents.append(MessageContent(
+                        type=block_type,
+                        content=raw,
+                        tool_name=block.get("tool_use_id") or block.get("name"),
+                    ))
         elif msg_type == "assistant":
             # Assistant messages: message.content is a list of content blocks
             model = message.get("model")

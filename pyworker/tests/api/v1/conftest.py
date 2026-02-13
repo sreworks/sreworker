@@ -10,6 +10,8 @@ from fastapi import FastAPI
 from app.api.v1 import workers, conversations
 from app.db import DatabaseConnection
 from app.services import ConversationManager
+from app.services.file_manager import FileManager
+from app.workers.v1.claude import ClaudeCodeWorker
 
 
 TEST_DB_DIR = "./data/test"
@@ -30,14 +32,17 @@ async def client():
     # Clean database before test
     _clean_test_db()
 
-    # Create database connection and conversation manager
+    # Create database connection, conversation manager, and file manager
     db_conn = DatabaseConnection(TEST_DB_PATH)
     conv_manager = ConversationManager(TEST_CONV_PATH)
+    fm = FileManager()
+    fm.start()
 
     # Inject dependencies into routers
     workers.db_conn = db_conn
     conversations.db_conn = db_conn
     conversations.conv_manager = conv_manager
+    conversations.file_manager = fm
 
     # Create a test app without lifespan (to avoid conflicts)
     test_app = FastAPI(title="PyWorker2 Test")
@@ -54,5 +59,7 @@ async def client():
         yield ac
 
     # Cleanup
+    ClaudeCodeWorker.stop_watching()
+    fm.stop()
     db_conn.close()
     _clean_test_db()
