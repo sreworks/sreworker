@@ -8,8 +8,8 @@ from pydantic import ValidationError
 from app.models.worker import CreateWorkerRequest, WorkerResponse, WORKER_NAME_PATTERN
 
 
-class TestWorkerNameValidation:
-    """Tests for WORKER_NAME_PATTERN validation."""
+class TestCreateWorkerRequest:
+    """SUT: CreateWorkerRequest"""
 
     def test_valid_name_alpha(self):
         """Pure alphabetic name should be valid."""
@@ -43,16 +43,18 @@ class TestWorkerNameValidation:
 
     def test_name_max_length(self):
         """64 chars should be valid, 65 chars should be invalid."""
-        # 64 chars: 'a' + 63 more = valid (starts with letter, max 64 total)
         valid_name = "a" * 64
         req = CreateWorkerRequest(name=valid_name)
         assert req.name == valid_name
 
-        # 65 chars: exceeds 64-char limit
         with pytest.raises(ValidationError):
             CreateWorkerRequest(name="a" * 65)
 
-    def test_worker_response_datetime_encoding(self):
+
+class TestWorkerResponse:
+    """SUT: WorkerResponse"""
+
+    def test_datetime_encoding(self):
         """WorkerResponse should encode datetime in JSON."""
         resp = WorkerResponse(
             name="w1", type="claudecode",

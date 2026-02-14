@@ -6,7 +6,7 @@ from app.workers.v1.base import BaseWorker
 
 
 class TestBaseWorker:
-    """Tests for BaseWorker ABC."""
+    """SUT: BaseWorker"""
 
     def test_cannot_instantiate(self):
         """Directly instantiating BaseWorker should raise TypeError."""

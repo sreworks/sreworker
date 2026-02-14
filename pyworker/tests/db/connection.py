@@ -18,7 +18,7 @@ def db_path(tmp_path):
 
 
 class TestDatabaseConnection:
-    """Tests for DatabaseConnection."""
+    """SUT: DatabaseConnection"""
 
     def test_connect_creates_file(self, db_path):
         """After connecting, the db file should exist."""

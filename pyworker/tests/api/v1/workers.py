@@ -5,10 +5,10 @@ from httpx import AsyncClient
 
 
 class TestHealthCheck:
-    """Health check endpoint tests."""
+    """SUT: health_check (main.py)"""
 
     async def test_health_check(self, client: AsyncClient):
-        """Test health check returns healthy status."""
+        """Should return 200 with healthy status."""
         response = await client.get("/health")
         assert response.status_code == 200
         data = response.json()
@@ -16,181 +16,180 @@ class TestHealthCheck:
         assert data["version"] == "1.0.0"
 
 
-class TestWorkerCRUD:
-    """Worker CRUD operation tests."""
+class TestWorkerAPI:
+    """Tests for worker API endpoints."""
 
-    async def test_list_workers_empty(self, client: AsyncClient):
-        """Test listing workers when empty."""
-        response = await client.get("/api/v1/workers")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["workers"] == []
+    class TestListWorkers:
+        """SUT: list_workers"""
 
-    async def test_create_worker(self, client: AsyncClient):
-        """Test creating a worker."""
-        response = await client.post(
-            "/api/v1/workers",
-            json={
-                "name": "test-worker",
-                "type": "claudecode",
-                "env_vars": {"TEST_VAR": "test_value"},
-                "command_params": ["--verbose"]
-            }
-        )
-        assert response.status_code == 201
-        data = response.json()
-        assert data["name"] == "test-worker"
-        assert data["type"] == "claudecode"
-        assert data["env_vars"] == {"TEST_VAR": "test_value"}
-        assert data["command_params"] == ["--verbose"]
+        async def test_empty(self, client: AsyncClient):
+            """Should return empty list when no workers exist."""
+            response = await client.get("/api/v1/workers")
+            assert response.status_code == 200
+            data = response.json()
+            assert data["workers"] == []
 
-    async def test_create_worker_default_type(self, client: AsyncClient):
-        """Test creating worker with default type."""
-        response = await client.post(
-            "/api/v1/workers",
-            json={"name": "default-type-worker"}
-        )
-        assert response.status_code == 201
-        data = response.json()
-        assert data["type"] == "claudecode"
+        async def test_after_create(self, client: AsyncClient):
+            """Should return workers after creating one."""
+            await client.post(
+                "/api/v1/workers",
+                json={"name": "list-test", "type": "claudecode"}
+            )
 
-    async def test_create_worker_invalid_name_with_space(self, client: AsyncClient):
-        """Test creating worker with invalid name (contains space) fails."""
-        response = await client.post(
-            "/api/v1/workers",
-            json={"name": "invalid worker", "type": "claudecode"}
-        )
-        assert response.status_code == 422
+            response = await client.get("/api/v1/workers")
+            assert response.status_code == 200
+            data = response.json()
+            assert len(data["workers"]) == 1
 
-    async def test_create_worker_invalid_name_starts_with_number(self, client: AsyncClient):
-        """Test creating worker with invalid name (starts with number) fails."""
-        response = await client.post(
-            "/api/v1/workers",
-            json={"name": "123worker", "type": "claudecode"}
-        )
-        assert response.status_code == 422
+    class TestCreateWorker:
+        """SUT: create_worker"""
 
-    async def test_create_worker_invalid_name_special_chars(self, client: AsyncClient):
-        """Test creating worker with invalid name (special chars) fails."""
-        response = await client.post(
-            "/api/v1/workers",
-            json={"name": "worker@test", "type": "claudecode"}
-        )
-        assert response.status_code == 422
+        async def test_success(self, client: AsyncClient):
+            """Should create a worker with all fields."""
+            response = await client.post(
+                "/api/v1/workers",
+                json={
+                    "name": "test-worker",
+                    "type": "claudecode",
+                    "env_vars": {"TEST_VAR": "test_value"},
+                    "command_params": ["--verbose"]
+                }
+            )
+            assert response.status_code == 201
+            data = response.json()
+            assert data["name"] == "test-worker"
+            assert data["type"] == "claudecode"
+            assert data["env_vars"] == {"TEST_VAR": "test_value"}
+            assert data["command_params"] == ["--verbose"]
 
-    async def test_create_worker_valid_name_with_hyphen(self, client: AsyncClient):
-        """Test creating worker with valid name containing hyphen."""
-        response = await client.post(
-            "/api/v1/workers",
-            json={"name": "my-worker-1", "type": "claudecode"}
-        )
-        assert response.status_code == 201
-        assert response.json()["name"] == "my-worker-1"
+        async def test_default_type(self, client: AsyncClient):
+            """Should default to claudecode type."""
+            response = await client.post(
+                "/api/v1/workers",
+                json={"name": "default-type-worker"}
+            )
+            assert response.status_code == 201
+            assert response.json()["type"] == "claudecode"
 
-    async def test_create_worker_valid_name_with_underscore(self, client: AsyncClient):
-        """Test creating worker with valid name containing underscore."""
-        response = await client.post(
-            "/api/v1/workers",
-            json={"name": "my_worker_2", "type": "claudecode"}
-        )
-        assert response.status_code == 201
-        assert response.json()["name"] == "my_worker_2"
+        async def test_invalid_name_with_space(self, client: AsyncClient):
+            """Name with space should return 422."""
+            response = await client.post(
+                "/api/v1/workers",
+                json={"name": "invalid worker", "type": "claudecode"}
+            )
+            assert response.status_code == 422
 
-    async def test_create_worker_duplicate_name(self, client: AsyncClient):
-        """Test creating worker with duplicate name fails."""
-        # Create first worker
-        response1 = await client.post(
-            "/api/v1/workers",
-            json={"name": "duplicate-test", "type": "claudecode"}
-        )
-        assert response1.status_code == 201
+        async def test_invalid_name_starts_with_number(self, client: AsyncClient):
+            """Name starting with number should return 422."""
+            response = await client.post(
+                "/api/v1/workers",
+                json={"name": "123worker", "type": "claudecode"}
+            )
+            assert response.status_code == 422
 
-        # Try to create second worker with same name
-        response2 = await client.post(
-            "/api/v1/workers",
-            json={"name": "duplicate-test", "type": "claudecode"}
-        )
-        assert response2.status_code == 400
-        assert "already exists" in response2.json()["detail"]
+        async def test_invalid_name_special_chars(self, client: AsyncClient):
+            """Name with special chars should return 422."""
+            response = await client.post(
+                "/api/v1/workers",
+                json={"name": "worker@test", "type": "claudecode"}
+            )
+            assert response.status_code == 422
 
-    async def test_get_worker(self, client: AsyncClient):
-        """Test getting a worker by ID."""
-        # Create worker first
-        create_response = await client.post(
-            "/api/v1/workers",
-            json={"name": "get-test", "type": "claudecode"}
-        )
-        worker_name = create_response.json()["name"]
+        async def test_valid_name_with_hyphen(self, client: AsyncClient):
+            """Name with hyphen should be accepted."""
+            response = await client.post(
+                "/api/v1/workers",
+                json={"name": "my-worker-1", "type": "claudecode"}
+            )
+            assert response.status_code == 201
+            assert response.json()["name"] == "my-worker-1"
 
-        # Get worker
-        response = await client.get(f"/api/v1/workers/{worker_name}")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["name"] == worker_name
-        assert data["type"] == "claudecode"
+        async def test_valid_name_with_underscore(self, client: AsyncClient):
+            """Name with underscore should be accepted."""
+            response = await client.post(
+                "/api/v1/workers",
+                json={"name": "my_worker_2", "type": "claudecode"}
+            )
+            assert response.status_code == 201
+            assert response.json()["name"] == "my_worker_2"
 
-    async def test_get_worker_not_found(self, client: AsyncClient):
-        """Test getting non-existent worker returns 404."""
-        response = await client.get("/api/v1/workers/non-existent-id")
-        assert response.status_code == 404
+        async def test_duplicate_name(self, client: AsyncClient):
+            """Duplicate name should return 400."""
+            response1 = await client.post(
+                "/api/v1/workers",
+                json={"name": "duplicate-test", "type": "claudecode"}
+            )
+            assert response1.status_code == 201
 
-    async def test_delete_worker(self, client: AsyncClient):
-        """Test deleting a worker."""
-        # Create worker first
-        create_response = await client.post(
-            "/api/v1/workers",
-            json={"name": "delete-test", "type": "claudecode"}
-        )
-        worker_name = create_response.json()["name"]
+            response2 = await client.post(
+                "/api/v1/workers",
+                json={"name": "duplicate-test", "type": "claudecode"}
+            )
+            assert response2.status_code == 400
+            assert "already exists" in response2.json()["detail"]
 
-        # Delete worker
-        response = await client.delete(f"/api/v1/workers/{worker_name}")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["status"] == "deleted"
+        async def test_persistence(self, client: AsyncClient):
+            """Created worker data should be persisted correctly."""
+            create_response = await client.post(
+                "/api/v1/workers",
+                json={
+                    "name": "persist-test",
+                    "type": "claudecode",
+                    "env_vars": {"API_KEY": "secret123", "DEBUG": "true"},
+                    "command_params": ["--model", "claude-3"]
+                }
+            )
+            worker_name = create_response.json()["name"]
 
-        # Verify worker is deleted
-        get_response = await client.get(f"/api/v1/workers/{worker_name}")
-        assert get_response.status_code == 404
+            response = await client.get(f"/api/v1/workers/{worker_name}")
+            assert response.status_code == 200
+            data = response.json()
+            assert data["env_vars"]["API_KEY"] == "secret123"
+            assert data["env_vars"]["DEBUG"] == "true"
+            assert "--model" in data["command_params"]
+            assert "claude-3" in data["command_params"]
 
-    async def test_delete_worker_not_found(self, client: AsyncClient):
-        """Test deleting non-existent worker returns 404."""
-        response = await client.delete("/api/v1/workers/non-existent-id")
-        assert response.status_code == 404
+    class TestGetWorker:
+        """SUT: get_worker"""
 
-    async def test_list_workers_after_create(self, client: AsyncClient):
-        """Test listing workers after creating one."""
-        # Create worker
-        await client.post(
-            "/api/v1/workers",
-            json={"name": "list-test", "type": "claudecode"}
-        )
+        async def test_found(self, client: AsyncClient):
+            """Should return worker by name."""
+            create_response = await client.post(
+                "/api/v1/workers",
+                json={"name": "get-test", "type": "claudecode"}
+            )
+            worker_name = create_response.json()["name"]
 
-        # List workers
-        response = await client.get("/api/v1/workers")
-        assert response.status_code == 200
-        data = response.json()
-        assert len(data["workers"]) == 1
+            response = await client.get(f"/api/v1/workers/{worker_name}")
+            assert response.status_code == 200
+            data = response.json()
+            assert data["name"] == worker_name
+            assert data["type"] == "claudecode"
 
-    async def test_worker_persistence(self, client: AsyncClient):
-        """Test worker data is persisted correctly."""
-        # Create worker with specific data
-        create_response = await client.post(
-            "/api/v1/workers",
-            json={
-                "name": "persist-test",
-                "type": "claudecode",
-                "env_vars": {"API_KEY": "secret123", "DEBUG": "true"},
-                "command_params": ["--model", "claude-3"]
-            }
-        )
-        worker_name = create_response.json()["name"]
+        async def test_not_found(self, client: AsyncClient):
+            """Non-existent name should return 404."""
+            response = await client.get("/api/v1/workers/non-existent-id")
+            assert response.status_code == 404
 
-        # Retrieve and verify
-        response = await client.get(f"/api/v1/workers/{worker_name}")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["env_vars"]["API_KEY"] == "secret123"
-        assert data["env_vars"]["DEBUG"] == "true"
-        assert "--model" in data["command_params"]
-        assert "claude-3" in data["command_params"]
+    class TestDeleteWorker:
+        """SUT: delete_worker"""
+
+        async def test_success(self, client: AsyncClient):
+            """Should delete and return status deleted."""
+            create_response = await client.post(
+                "/api/v1/workers",
+                json={"name": "delete-test", "type": "claudecode"}
+            )
+            worker_name = create_response.json()["name"]
+
+            response = await client.delete(f"/api/v1/workers/{worker_name}")
+            assert response.status_code == 200
+            assert response.json()["status"] == "deleted"
+
+            get_response = await client.get(f"/api/v1/workers/{worker_name}")
+            assert get_response.status_code == 404
+
+        async def test_not_found(self, client: AsyncClient):
+            """Non-existent name should return 404."""
+            response = await client.delete("/api/v1/workers/non-existent-id")
+            assert response.status_code == 404

@@ -6,7 +6,7 @@ from app.db.database_models.conversation import ConversationDO
 
 
 class TestConversationDO:
-    """Tests for ConversationDO."""
+    """SUT: ConversationDO"""
 
     def test_default_values(self):
         """created_at and last_activity should be auto-assigned."""

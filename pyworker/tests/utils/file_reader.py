@@ -22,7 +22,7 @@ def test_dir():
 
 
 class TestReverseReadline:
-    """Tests for reverse_readline function."""
+    """SUT: reverse_readline"""
 
     def test_empty_file(self, test_dir):
         """Test reading empty file."""
@@ -94,7 +94,7 @@ class TestReverseReadline:
 
 
 class TestReadLastNLines:
-    """Tests for read_last_n_lines function."""
+    """SUT: read_last_n_lines"""
 
     def test_read_all_lines_reverse(self, test_dir):
         """Test reading all lines in reverse order (default)."""

@@ -15,7 +15,7 @@ async def client():
 
 
 class TestMain:
-    """Tests for main application endpoints."""
+    """SUT: app (main.py)"""
 
     async def test_health_check(self, client: AsyncClient):
         """GET /health should return 200 with healthy status."""

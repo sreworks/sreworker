@@ -11,17 +11,21 @@ from app.models.message import (
 )
 
 
-class TestMessageModels:
-    """Tests for message API models."""
+class TestMessageContent:
+    """SUT: MessageContent"""
 
-    def test_message_content_creation(self):
+    def test_creation(self):
         """MessageContent should hold type and content."""
         mc = MessageContent(type="text", content="hello")
         assert mc.type == "text"
         assert mc.content == "hello"
         assert mc.tool_name is None
 
-    def test_message_response_serialization(self):
+
+class TestMessageResponse:
+    """SUT: MessageResponse"""
+
+    def test_serialization(self):
         """model_dump_json() should produce valid JSON."""
         msg = MessageResponse(
             uuid="u1", type="user",
@@ -33,7 +37,7 @@ class TestMessageModels:
         assert data["type"] == "user"
         assert len(data["contents"]) == 1
 
-    def test_message_response_optional_fields(self):
+    def test_optional_fields(self):
         """model, usage, error should default to None."""
         msg = MessageResponse(
             uuid="u1", type="user",
@@ -43,8 +47,12 @@ class TestMessageModels:
         assert msg.usage is None
         assert msg.error is None
 
-    def test_conversation_messages_response(self):
-        """ConversationMessagesResponse should hold nested messages."""
+
+class TestConversationMessagesResponse:
+    """SUT: ConversationMessagesResponse"""
+
+    def test_holds_nested_messages(self):
+        """Should hold nested messages with correct total."""
         msg = MessageResponse(
             uuid="u1", type="user",
             contents=[MessageContent(type="text", content="hi")],
@@ -57,8 +65,12 @@ class TestMessageModels:
         assert len(resp.messages) == 1
         assert resp.messages[0].uuid == "u1"
 
-    def test_sync_messages_response(self):
-        """SyncMessagesResponse should have correct fields."""
+
+class TestSyncMessagesResponse:
+    """SUT: SyncMessagesResponse"""
+
+    def test_fields(self):
+        """Should have correct fields."""
         resp = SyncMessagesResponse(
             conversation_id="c1", synced_count=5, total_messages=10
         )

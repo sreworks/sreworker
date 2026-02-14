@@ -6,18 +6,24 @@ from app.workers.v1.opencode import OpenCodeWorker
 
 
 class TestOpenCodeWorker:
-    """Tests for OpenCodeWorker stub."""
+    """Tests for OpenCodeWorker."""
 
-    @pytest.mark.asyncio
-    async def test_start_conversation_raises(self):
-        """start_conversation should raise NotImplementedError."""
-        worker = OpenCodeWorker()
-        with pytest.raises(NotImplementedError):
-            await worker.start_conversation("/tmp", "hello")
+    class TestStartConversation:
+        """SUT: OpenCodeWorker.start_conversation"""
 
-    @pytest.mark.asyncio
-    async def test_fetch_messages_raises(self):
-        """fetch_messages should raise NotImplementedError."""
-        worker = OpenCodeWorker()
-        with pytest.raises(NotImplementedError):
-            await worker.fetch_messages("some-id")
+        @pytest.mark.asyncio
+        async def test_raises_not_implemented(self):
+            """Should raise NotImplementedError."""
+            worker = OpenCodeWorker()
+            with pytest.raises(NotImplementedError):
+                await worker.start_conversation("/tmp", "hello")
+
+    class TestFetchMessages:
+        """SUT: OpenCodeWorker.fetch_messages"""
+
+        @pytest.mark.asyncio
+        async def test_raises_not_implemented(self):
+            """Should raise NotImplementedError."""
+            worker = OpenCodeWorker()
+            with pytest.raises(NotImplementedError):
+                await worker.fetch_messages("some-id")

@@ -6,7 +6,7 @@ from app.db.database_models.worker import WorkerDO
 
 
 class TestWorkerDO:
-    """Tests for WorkerDO."""
+    """SUT: WorkerDO"""
 
     def test_default_values(self):
         """env_vars, command_params, and created_at should have defaults."""
