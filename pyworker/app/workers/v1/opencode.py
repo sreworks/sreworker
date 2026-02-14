@@ -31,6 +31,6 @@ class OpenCodeWorker(BaseWorker):
         """继续已有会话"""
         raise NotImplementedError("OpenCodeWorker not implemented yet")
 
-    async def sync_messages(self, raw_conversation_id: str) -> List[MessageResponse]:
-        """从 OpenCode 同步会话消息"""
+    async def fetch_messages(self, raw_conversation_id: str) -> List[MessageResponse]:
+        """从 OpenCode 读取并转换会话消息"""
         raise NotImplementedError("OpenCodeWorker not implemented yet")

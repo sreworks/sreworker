@@ -50,9 +50,9 @@ class BaseWorker(ABC):
         pass
 
     @abstractmethod
-    async def sync_messages(self, raw_conversation_id: str) -> List[MessageResponse]:
+    async def fetch_messages(self, raw_conversation_id: str) -> List[MessageResponse]:
         """
-        从代码工具侧同步会话消息
+        从代码工具侧读取并转换会话消息
 
         Args:
             raw_conversation_id: 代码工具侧的会话 ID

@@ -292,7 +292,7 @@ async def create_input(
 
     # 立即执行一次 sync，防止 watch 激活晚于初始写入
     try:
-        messages = await worker_instance.sync_messages(actual_raw_id)
+        messages = await worker_instance.fetch_messages(actual_raw_id)
         if messages:
             manager.save_messages(conversation.worker_id, conversation_id, messages)
     except Exception:
@@ -378,9 +378,9 @@ async def sync_conversation_messages(
 
     # Sync messages from code tool (already standardized by worker)
     try:
-        messages = await worker_instance.sync_messages(conversation.raw_conversation_id)
+        messages = await worker_instance.fetch_messages(conversation.raw_conversation_id)
     except NotImplementedError:
-        raise HTTPException(status_code=501, detail=f"sync_messages not implemented for worker type: {worker_record.type}")
+        raise HTTPException(status_code=501, detail=f"fetch_messages not implemented for worker type: {worker_record.type}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to sync messages: {str(e)}")
 

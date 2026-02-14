@@ -110,7 +110,7 @@ class ConversationManager:
         Args:
             worker_name: Worker name
             conversation_id: Conversation ID
-            messages: Standardized messages from worker's sync_messages()
+            messages: Standardized messages from worker's fetch_messages()
 
         Returns:
             Number of messages written

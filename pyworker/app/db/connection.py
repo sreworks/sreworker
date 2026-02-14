@@ -73,38 +73,10 @@ class DatabaseConnection:
             except Exception:
                 pass  # Column already exists or table doesn't support ALTER
 
-            # Messages table - abstract model for different code tools
-            self.conn.execute("""
-                CREATE TABLE IF NOT EXISTS messages (
-                    id BIGINT PRIMARY KEY,
-                    conversation_id VARCHAR NOT NULL,
-                    worker_id VARCHAR NOT NULL,
-                    message_type VARCHAR NOT NULL,
-                    uuid VARCHAR NOT NULL,
-                    content JSON NOT NULL,
-                    timestamp TIMESTAMP NOT NULL
-                )
-            """)
-
-            # Add unique constraint on uuid to prevent duplicate syncing
-            try:
-                self.conn.execute("""
-                    CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_uuid ON messages(uuid)
-                """)
-            except Exception:
-                pass  # Index already exists
-
             # Create indexes
             self.conn.execute("CREATE INDEX IF NOT EXISTS idx_workers_type ON workers(type)")
             self.conn.execute("CREATE INDEX IF NOT EXISTS idx_conversations_worker ON conversations(worker_id)")
             self.conn.execute("CREATE INDEX IF NOT EXISTS idx_conversations_project ON conversations(project_path)")
-            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_conversations_current ON conversations(worker_id, is_current)")
-            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id)")
-            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_worker ON messages(worker_id)")
-            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp)")
-
-            # Create sequence for message IDs
-            self.conn.execute("CREATE SEQUENCE IF NOT EXISTS messages_id_seq START 1")
 
             self.logger.info("Database schema initialized successfully")
 

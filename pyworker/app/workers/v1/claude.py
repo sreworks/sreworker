@@ -87,7 +87,7 @@ class ClaudeCodeWorker(BaseWorker):
         logger = get_app_logger()
         worker = cls()
         try:
-            messages = await worker.sync_messages(session_id)
+            messages = await worker.fetch_messages(session_id)
             if cls._conv_manager_ref and messages:
                 cls._conv_manager_ref.save_messages(worker_id, conversation_id, messages)
             logger.info(f"[ClaudeCode] Auto-synced & saved {len(messages)} messages for {session_id}")
@@ -210,9 +210,9 @@ class ClaudeCodeWorker(BaseWorker):
 
         return None
 
-    async def sync_messages(self, raw_conversation_id: str) -> List[MessageResponse]:
+    async def fetch_messages(self, raw_conversation_id: str) -> List[MessageResponse]:
         """
-        从 Claude Code 同步会话消息
+        从 Claude Code 读取并转换会话消息
 
         Args:
             raw_conversation_id: Claude Code session_id
